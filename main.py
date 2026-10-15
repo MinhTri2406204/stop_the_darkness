@@ -19,6 +19,9 @@ WHITE = (255, 255, 255)
 BLACK = (0, 0, 0)
 GRAY = (200, 200, 200)
 DARK_GRAY = (30, 30, 30)
+GREEN = (60, 179, 113)
+BLUE = (70, 130, 180)
+ORANGE = (255, 165, 0)
 
 # Terrain colors
 TERRAINS = ['rock', 'tree', 'plain', 'water', 'magic']
@@ -58,12 +61,19 @@ dir_index = 0  # Bắt đầu sang phải
 move_timer = 0
 MOVE_DELAY = 500  # ms giữa mỗi bước (đã giảm để dễ test)
 
+# Control whether the spiral is advancing
+playing = False
+
+# Resources (set when play starts)
+resources = None  # will be dict like {'wood':12,...}
+
+
 dark_cells = set()
 dark_cells.add((col, row))
 
 cell_levels = {}
 
-# ------------- Terrain map generation -------------
+# ------------- Terrain map generation helpers -------------
 # You can tweak weights to control frequency of terrains
 terrain_weights = {
     'rock': 8,
@@ -76,27 +86,61 @@ terrain_choices = []
 for t, w in terrain_weights.items():
     terrain_choices.extend([t] * w)
 
-terrain_map = {}
-for c in range(GRID_SIZE):
-    for r in range(GRID_SIZE):
-        terrain_map[(c, r)] = random.choice(terrain_choices)
 
-# ------------- Place a beacon randomly in the 4 center cells -------------
-center_cells = [
-    (GRID_SIZE // 2 - 1, GRID_SIZE // 2 - 1),
-    (GRID_SIZE // 2, GRID_SIZE // 2 - 1),
-    (GRID_SIZE // 2 - 1, GRID_SIZE // 2),
-    (GRID_SIZE // 2, GRID_SIZE // 2),
-]
-beacon_pos = random.choice(center_cells)
-terrain_map[beacon_pos] = 'beacan'
+def generate_terrain_map():
+    m = {}
+    for c in range(GRID_SIZE):
+        for r in range(GRID_SIZE):
+            m[(c, r)] = random.choice(terrain_choices)
+    # place beacon in one of the 4 center cells
+    center_cells = [
+        (GRID_SIZE // 2 - 1, GRID_SIZE // 2 - 1),
+        (GRID_SIZE // 2, GRID_SIZE // 2 - 1),
+        (GRID_SIZE // 2 - 1, GRID_SIZE // 2),
+        (GRID_SIZE // 2, GRID_SIZE // 2),
+    ]
+    beacon = random.choice(center_cells)
+    m[beacon] = 'beacan'
+    return m, beacon
+
+
+def regenerate_map():
+    global terrain_map, beacon_pos, cell_levels, dark_cells
+    global col, row, left_bound, right_bound, top_bound, bottom_bound, dir_index, move_timer
+
+    terrain_map, beacon_pos = generate_terrain_map()
+    # reset game spiral state
+    col, row = 0, GRID_SIZE - 1
+    left_bound = 0
+    right_bound = GRID_SIZE - 1
+    top_bound = 0
+    bottom_bound = GRID_SIZE - 1
+    dir_index = 0
+    move_timer = 0
+    # reset dark and levels
+    dark_cells = {(col, row)}
+    cell_levels = {}
+
+
+# initial terrain map
+terrain_map, beacon_pos = generate_terrain_map()
+
+# Button layout in the info panel
+BUTTON_W = 120
+BUTTON_H = 40
+BUTTON_SPACING = 20
+buttons_x = GRID_PIXELS + (INFO_WIDTH - (BUTTON_W * 2 + BUTTON_SPACING)) // 2
+buttons_y = SCREEN_HEIGHT // 4 + 60
+play_button_rect = pygame.Rect(buttons_x, buttons_y, BUTTON_W, BUTTON_H)
+regen_button_rect = pygame.Rect(buttons_x + BUTTON_W + BUTTON_SPACING, buttons_y, BUTTON_W, BUTTON_H)
 
 # ------------- Main loop -------------
 while running:
     dt = clock.tick(60)
-    move_timer += dt
+    if playing:
+        move_timer += dt
 
-    if move_timer >= MOVE_DELAY:
+    if playing and move_timer >= MOVE_DELAY:
         move_timer = 0
 
         # Lấy hướng đi hiện tại
@@ -140,6 +184,31 @@ while running:
         if event.type == pygame.MOUSEBUTTONDOWN:
             if event.button == 1:
                 mouse_x, mouse_y = event.pos
+
+                # If click is inside info panel, check buttons first
+                if mouse_x >= GRID_PIXELS:
+                    # If currently playing, the panel shows resources only; ignore clicks there
+                    if playing:
+                        # Optionally later we could add pause button here
+                        continue
+                    # Not playing: check buttons
+                    if play_button_rect.collidepoint(mouse_x, mouse_y):
+                        # Toggle playing; when starting play initialize resources
+                        was_playing = playing
+                        playing = not playing
+                        if playing and not was_playing:
+                            resources = {'wood': 12, 'rock': 0, 'mana': 0, 'technology': 0}
+                            print('Playing - resources initialized:', resources)
+                        else:
+                            print('Paused')
+                        continue
+                    if regen_button_rect.collidepoint(mouse_x, mouse_y):
+                        regenerate_map()
+                        print('Map regenerated')
+                        continue
+                    # clicked inside panel but not on buttons; ignore
+                    continue
+
                 clicked_col = mouse_x // CELL_SIZE
                 clicked_row = mouse_y // CELL_SIZE
 
@@ -199,17 +268,72 @@ while running:
     # Draw right info panel (300 x 600)
     pygame.draw.rect(screen, DARK_GRAY, (GRID_PIXELS, 0, INFO_WIDTH, SCREEN_HEIGHT))
 
-    # Title centered in the info panel
-    title_surface = title_font.render('Stop the darkness', True, WHITE)
-    title_rect = title_surface.get_rect()
-    title_rect.center = (GRID_PIXELS + INFO_WIDTH // 2, SCREEN_HEIGHT // 4)
-    screen.blit(title_surface, title_rect)
+    # If playing, show only resources in the panel
+    if playing and resources is not None:
+        # Title small at top
+        title_surface = title_font.render('Stop the darkness', True, WHITE)
+        title_rect = title_surface.get_rect()
+        title_rect.center = (GRID_PIXELS + INFO_WIDTH // 2, 40)
+        screen.blit(title_surface, title_rect)
 
-    # Optional: small subtitle
-    subtitle = font.render('Protect the beacon!', True, (200, 200, 200))
-    sub_rect = subtitle.get_rect()
-    sub_rect.center = (GRID_PIXELS + INFO_WIDTH // 2, SCREEN_HEIGHT // 4 + 36)
-    screen.blit(subtitle, sub_rect)
+        # Draw resources list
+        res_font = pygame.font.SysFont(None, 28)
+        labels = ['Wood', 'Rock', 'Mana', 'Technology']
+        keys = ['wood', 'rock', 'mana', 'technology']
+        start_y = 120
+        for i, k in enumerate(keys):
+            y = start_y + i * 48
+            name_surf = res_font.render(labels[i] + ':', True, WHITE)
+            val_surf = res_font.render(str(resources.get(k, 0)), True, WHITE)
+            name_rect = name_surf.get_rect()
+            val_rect = val_surf.get_rect()
+            name_rect.topleft = (GRID_PIXELS + 30, y)
+            val_rect.topright = (GRID_PIXELS + INFO_WIDTH - 30, y)
+            screen.blit(name_surf, name_rect)
+            screen.blit(val_surf, val_rect)
+
+    else:
+        # Title centered in the info panel
+        title_surface = title_font.render('Stop the darkness', True, WHITE)
+        title_rect = title_surface.get_rect()
+        title_rect.center = (GRID_PIXELS + INFO_WIDTH // 2, SCREEN_HEIGHT // 4)
+        screen.blit(title_surface, title_rect)
+
+        # Optional: small subtitle
+        subtitle = font.render('Protect the beacon!', True, (200, 200, 200))
+        sub_rect = subtitle.get_rect()
+        sub_rect.center = (GRID_PIXELS + INFO_WIDTH // 2, SCREEN_HEIGHT // 4 + 36)
+        screen.blit(subtitle, sub_rect)
+
+        # Draw buttons
+        # Play / Pause button
+        play_color = ORANGE if playing else GREEN
+        pygame.draw.rect(screen, play_color, play_button_rect)
+        pygame.draw.rect(screen, WHITE, play_button_rect, 2)
+        play_label = 'Pause' if playing else 'Play'
+        play_text = font.render(play_label, True, WHITE)
+        pt_rect = play_text.get_rect()
+        pt_rect.center = play_button_rect.center
+        screen.blit(play_text, pt_rect)
+
+        # Regenerate button
+        pygame.draw.rect(screen, BLUE, regen_button_rect)
+        pygame.draw.rect(screen, WHITE, regen_button_rect, 2)
+        regen_text = font.render('Regenerate Map', True, WHITE)
+        rt_rect = regen_text.get_rect()
+        rt_rect.center = regen_button_rect.center
+        screen.blit(regen_text, rt_rect)
+
+        # small legend area (optional)
+        legend_y = buttons_y + BUTTON_H + 30
+        lx = GRID_PIXELS + 20
+        for i, t in enumerate(TERRAINS + ['beacan']):
+            ty = legend_y + i * 24
+            color = TERRAIN_COLORS.get(t, (200, 200, 200))
+            pygame.draw.rect(screen, color, (lx, ty, 18, 18))
+            label = 'Beacon' if t == 'beacan' else t.capitalize()
+            lbl = font.render(label, True, WHITE)
+            screen.blit(lbl, (lx + 24, ty))
 
     pygame.display.flip()
 
