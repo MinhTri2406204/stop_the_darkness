@@ -6,15 +6,19 @@ pygame.font.init()
 
 GRID_SIZE = 12
 CELL_SIZE = 50
-SCREEN_SIZE = GRID_SIZE * CELL_SIZE
+GRID_PIXELS = GRID_SIZE * CELL_SIZE
+INFO_WIDTH = 300  # requested 300 x 600 area for title/info
+SCREEN_WIDTH = GRID_PIXELS + INFO_WIDTH
+SCREEN_HEIGHT = GRID_PIXELS
 
-screen = pygame.display.set_mode((SCREEN_SIZE, SCREEN_SIZE))
+screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
 pygame.display.set_caption('Stop the darkness')
 running = True
 
 WHITE = (255, 255, 255)
 BLACK = (0, 0, 0)
 GRAY = (200, 200, 200)
+DARK_GRAY = (30, 30, 30)
 
 # Terrain colors
 TERRAINS = ['rock', 'tree', 'plain', 'water', 'magic']
@@ -27,8 +31,10 @@ TERRAIN_COLORS = {
     'beacan': (255, 215, 0),  # special beacon cell (gold)
 }
 
+# Fonts
 font = pygame.font.SysFont(None, 18)
 level_font = pygame.font.SysFont(None, 20, bold=True)
+title_font = pygame.font.SysFont(None, 40, bold=True)
 
 clock = pygame.time.Clock()
 
@@ -160,7 +166,7 @@ while running:
 
     screen.fill(WHITE)
 
-    # 1. Vẽ terrains
+    # Draw left: 1. Vẽ terrains
     for (c, r), t in terrain_map.items():
         color = TERRAIN_COLORS.get(t, (200, 200, 200))
         pygame.draw.rect(screen, color, (c * CELL_SIZE, r * CELL_SIZE, CELL_SIZE, CELL_SIZE))
@@ -186,9 +192,24 @@ while running:
     # 4. Vẽ lưới
     for i in range(GRID_SIZE + 1):
         # horizontal
-        pygame.draw.line(screen, GRAY, (0, i * CELL_SIZE), (SCREEN_SIZE, i * CELL_SIZE))
+        pygame.draw.line(screen, GRAY, (0, i * CELL_SIZE), (GRID_PIXELS, i * CELL_SIZE))
         # vertical
-        pygame.draw.line(screen, GRAY, (i * CELL_SIZE, 0), (i * CELL_SIZE, SCREEN_SIZE))
+        pygame.draw.line(screen, GRAY, (i * CELL_SIZE, 0), (i * CELL_SIZE, GRID_PIXELS))
+
+    # Draw right info panel (300 x 600)
+    pygame.draw.rect(screen, DARK_GRAY, (GRID_PIXELS, 0, INFO_WIDTH, SCREEN_HEIGHT))
+
+    # Title centered in the info panel
+    title_surface = title_font.render('Stop the darkness', True, WHITE)
+    title_rect = title_surface.get_rect()
+    title_rect.center = (GRID_PIXELS + INFO_WIDTH // 2, SCREEN_HEIGHT // 4)
+    screen.blit(title_surface, title_rect)
+
+    # Optional: small subtitle
+    subtitle = font.render('Protect the beacon!', True, (200, 200, 200))
+    sub_rect = subtitle.get_rect()
+    sub_rect.center = (GRID_PIXELS + INFO_WIDTH // 2, SCREEN_HEIGHT // 4 + 36)
+    screen.blit(subtitle, sub_rect)
 
     pygame.display.flip()
 
