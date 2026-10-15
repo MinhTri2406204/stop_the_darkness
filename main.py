@@ -24,6 +24,7 @@ TERRAIN_COLORS = {
     'plain': (222, 184, 135),
     'water': (65, 105, 225),
     'magic': (138, 43, 226),
+    'beacan': (255, 215, 0),  # special beacon cell (gold)
 }
 
 font = pygame.font.SysFont(None, 18)
@@ -73,6 +74,16 @@ terrain_map = {}
 for c in range(GRID_SIZE):
     for r in range(GRID_SIZE):
         terrain_map[(c, r)] = random.choice(terrain_choices)
+
+# ------------- Place a beacon randomly in the 4 center cells -------------
+center_cells = [
+    (GRID_SIZE // 2 - 1, GRID_SIZE // 2 - 1),
+    (GRID_SIZE // 2, GRID_SIZE // 2 - 1),
+    (GRID_SIZE // 2 - 1, GRID_SIZE // 2),
+    (GRID_SIZE // 2, GRID_SIZE // 2),
+]
+beacon_pos = random.choice(center_cells)
+terrain_map[beacon_pos] = 'beacan'
 
 # ------------- Main loop -------------
 while running:
@@ -154,7 +165,9 @@ while running:
         color = TERRAIN_COLORS.get(t, (200, 200, 200))
         pygame.draw.rect(screen, color, (c * CELL_SIZE, r * CELL_SIZE, CELL_SIZE, CELL_SIZE))
         # Vẽ chữ viết tắt terrain
-        text = font.render(t[0].upper(), True, (255, 255, 255))
+        # For 'beacan' we want 'B'
+        label = 'B' if t == 'beacan' else t[0].upper()
+        text = font.render(label, True, (255, 255, 255))
         screen.blit(text, (c * CELL_SIZE + 4, r * CELL_SIZE + 2))
 
     # 2. Vẽ các ô bóng tối (đè lên terrains)
