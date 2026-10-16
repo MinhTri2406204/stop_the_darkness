@@ -474,16 +474,35 @@ while running:
             hover_row = mouse_y // CELL_SIZE
             if 0 <= hover_col < GRID_SIZE and 0 <= hover_row < GRID_SIZE:
                 ttype = terrain_map.get((hover_col, hover_row), 'plain')
+                # Determine display name for plains (including plain subtypes) based on rules
                 if ttype == 'beacan':
                     display_name = 'Beacon'
+                    display_key = 'beacan'
+                elif ttype == 'plain':
+                    # evaluate plain variant based on neighbors and show friendly name
+                    pv = choose_plain_variant(hover_col, hover_row)
+                    display_key = pv
+                    if pv == 'plain_wood':
+                        display_name = 'Village'
+                    elif pv == 'plain_rock':
+                        display_name = 'Mining village'
+                    elif pv == 'plain_magic':
+                        display_name = 'Magical village'
+                    else:
+                        display_name = 'Village'
                 elif ttype == 'plain_wood':
                     display_name = 'Village'
+                    display_key = 'plain_wood'
                 elif ttype == 'plain_rock':
                     display_name = 'Mining village'
+                    display_key = 'plain_rock'
                 elif ttype == 'plain_magic':
                     display_name = 'Magical village'
+                    display_key = 'plain_magic'
                 else:
                     display_name = ttype.capitalize()
+                    display_key = ttype
+
                 level = cell_levels.get((hover_col, hover_row), 1)
                 next_level = level + 1
 
@@ -517,19 +536,28 @@ while running:
                     screen.blit(nl, (info_x + 8, box2_y + 6))
 
                     # compute cost after +1 for the terrain type
-                    cost_key = 'beacon' if ttype == 'beacan' else ttype
+                    # use display_key (evaluated variant for plains) to lookup costs
+                    cost_key = 'beacon' if display_key == 'beacan' else display_key
                     cost_entry = costs.get(cost_key)
                     cost_text_y = box2_y + 36
                     if cost_entry:
-                        # show each resource with value+1
+                        # show only wood/rock/mana (magic) if present
                         cx = info_x + 8
-                        for i, (rk, rv) in enumerate(cost_entry.items()):
-                            try:
-                                new_val = int(rv) + 1
-                            except Exception:
-                                new_val = rv
-                            ct = small_font.render(f"{rk.capitalize()}: {new_val}", True, WHITE)
-                            screen.blit(ct, (cx, cost_text_y + i * 18))
+                        line_index = 0
+                        for rk in ('wood', 'rock', 'mana'):
+                            if rk in cost_entry:
+                                try:
+                                    new_val = int(cost_entry[rk]) + 1
+                                except Exception:
+                                    new_val = cost_entry[rk]
+                                # label mapping: 'mana' -> 'Magic' for display
+                                label = 'Magic' if rk == 'mana' else rk.capitalize()
+                                ct = small_font.render(f"{label}: {new_val}", True, WHITE)
+                                screen.blit(ct, (cx, cost_text_y + line_index * 18))
+                                line_index += 1
+                        if line_index == 0:
+                            ct = small_font.render("Cost: -", True, WHITE)
+                            screen.blit(ct, (info_x + 8, cost_text_y))
                     else:
                         ct = small_font.render("Cost: -", True, WHITE)
                         screen.blit(ct, (info_x + 8, cost_text_y))
