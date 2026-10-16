@@ -115,11 +115,16 @@ for t, w in terrain_weights.items():
 
 
 def generate_terrain_map():
+    """Generate a terrain map while enforcing maximum counts per terrain.
+    Max counts (excluding the beacon cell):
+      - tree: 40
+      - water: 30
+      - rock: 14
+      - magic: 4
+    Remaining cells are 'plain'. The beacon is placed in one of the four center cells.
+    """
     m = {}
-    for c in range(GRID_SIZE):
-        for r in range(GRID_SIZE):
-            m[(c, r)] = random.choice(terrain_choices)
-    # place beacon in one of the 4 center cells
+    # choose beacon among center cells first
     center_cells = [
         (GRID_SIZE // 2 - 1, GRID_SIZE // 2 - 1),
         (GRID_SIZE // 2, GRID_SIZE // 2 - 1),
@@ -127,6 +132,29 @@ def generate_terrain_map():
         (GRID_SIZE // 2, GRID_SIZE // 2),
     ]
     beacon = random.choice(center_cells)
+
+    # prepare list of all positions excluding the beacon
+    positions = [(c, r) for c in range(GRID_SIZE) for r in range(GRID_SIZE) if (c, r) != beacon]
+
+    # maximum counts for constrained terrains
+    max_counts = {'tree': 40, 'water': 30, 'rock': 14, 'magic': 4}
+
+    pool = []
+    # add constrained terrains up to their limits (but not exceeding available positions)
+    for terrain, cnt in max_counts.items():
+        take = min(cnt, len(positions) - len(pool))
+        pool.extend([terrain] * take)
+    # fill the rest with plain
+    remaining = len(positions) - len(pool)
+    if remaining > 0:
+        pool.extend(['plain'] * remaining)
+
+    # shuffle pool and assign to positions
+    random.shuffle(pool)
+    for pos, terrain in zip(positions, pool):
+        m[pos] = terrain
+
+    # set beacon cell
     m[beacon] = 'beacan'
     return m, beacon
 
