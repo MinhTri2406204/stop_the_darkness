@@ -178,11 +178,15 @@ def regenerate_map():
     move_timer = 0
     # reset dark and levels
     dark_cells = {(col, row)}
-    # reset all levels to 1
+    # reset all levels to 1 except some plain subtypes which start at 0
     cell_levels = {}
     for c in range(GRID_SIZE):
         for r in range(GRID_SIZE):
-            cell_levels[(c, r)] = 1
+            t = terrain_map.get((c, r), 'plain')
+            if t in ('plain_wood', 'plain_rock', 'plain_water'):
+                cell_levels[(c, r)] = 0
+            else:
+                cell_levels[(c, r)] = 1
 
 
 # initial terrain map
@@ -191,7 +195,11 @@ terrain_map, beacon_pos = generate_terrain_map()
 cell_levels = {}
 for c in range(GRID_SIZE):
     for r in range(GRID_SIZE):
-        cell_levels[(c, r)] = 1
+        t = terrain_map.get((c, r), 'plain')
+        if t in ('plain_wood', 'plain_rock', 'plain_water'):
+            cell_levels[(c, r)] = 0
+        else:
+            cell_levels[(c, r)] = 1
 
 # Button layout in the info panel
 BUTTON_W = 120
