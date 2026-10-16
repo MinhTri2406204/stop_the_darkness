@@ -259,12 +259,11 @@ def get_boost_percent(source_terrain, source_level, target_terrain):
       - all other combos => 0.
     Percentages are expressed as decimals for multiplication.
     """
-    if source_terrain == 'plain' and source_level is not None:
-        try:
-            source_terrain = choose_plain_variant(*[0, 0])
-        except Exception:
-            pass
+    # cells with level 0 do not provide adjacency boost
+    if source_level is None or source_level <= 0:
+        return 0.0
 
+    # caller should pass plain variants (plain_...) rather than raw 'plain'
     if target_terrain not in get_boost_targets(source_terrain):
         return 0.0
 
@@ -284,11 +283,15 @@ def get_boost_percent(source_terrain, source_level, target_terrain):
 def compute_total_production_per_minute():
     """Sum production per-minute across the whole grid and return dict resource->amt.
     Each adjacent terrain within the 3x3 area contributes a boost to the target cell's output.
+    Only neighbors with level >=1 contribute boosts; level 0 neighbors do not.
     """
     totals = {}
     for (c, r), lvl in cell_levels.items():
         terrain = terrain_map.get((c, r), 'plain')
-        res_key, base_amt = get_cell_production_per_minute(terrain, lvl)
+        # determine effective target terrain (resolve plain -> plain_variant)
+        target = terrain if terrain != 'plain' else choose_plain_variant(c, r)
+
+        res_key, base_amt = get_cell_production_per_minute(target, lvl)
         if not res_key or base_amt == 0:
             continue
 
@@ -302,8 +305,14 @@ def compute_total_production_per_minute():
                 if not (0 <= nx < GRID_SIZE and 0 <= ny < GRID_SIZE):
                     continue
                 neighbor_type = terrain_map.get((nx, ny), 'plain')
-                neighbor_level = cell_levels.get((nx, ny), 1)
-                boost_total += get_boost_percent(neighbor_type, neighbor_level, terrain)
+                # resolve plain neighbors to their variants
+                if neighbor_type == 'plain':
+                    neighbor_type = choose_plain_variant(nx, ny)
+                neighbor_level = cell_levels.get((nx, ny), 0)
+                # only neighbors with level >=1 provide boosts
+                if neighbor_level <= 0:
+                    continue
+                boost_total += get_boost_percent(neighbor_type, neighbor_level, target)
 
         final_amt = base_amt * (1.0 + boost_total)
         totals[res_key] = totals.get(res_key, 0) + final_amt
@@ -407,7 +416,10 @@ def compute_cell_boost_percent(center_col, center_row):
             # if neighbor is plain, evaluate its plain variant for source
             if source == 'plain':
                 source = choose_plain_variant(nx, ny)
-            neighbor_level = cell_levels.get((nx, ny), 1)
+            neighbor_level = cell_levels.get((nx, ny), 0)
+            # only neighbors with level >=1 provide boosts
+            if neighbor_level <= 0:
+                continue
             boost_total += get_boost_percent(source, neighbor_level, target)
     return boost_total
 
