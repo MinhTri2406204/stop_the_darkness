@@ -1,6 +1,10 @@
 import pygame
 import random
 import json
+import pathlib from Path
+
+script_dir = Path(__file__).parent
+file_path = script_dir / "cost.json"
 
 pygame.init()
 pygame.font.init()
@@ -37,7 +41,7 @@ TERRAIN_COLORS = {
 
 # load costs
 try:
-    with open("cost.json", "r", encoding="utf-8") as f:
+    with open(file_path, "r", encoding="utf-8") as f:
         costs = json.load(f)
 except Exception as e:
     print("Warning: could not load cost.json:", e)
