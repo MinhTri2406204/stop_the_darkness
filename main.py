@@ -178,20 +178,26 @@ def regenerate_map():
     move_timer = 0
     # reset dark and levels
     dark_cells = {(col, row)}
-    # reset all levels to 1
+    # reset all levels: plains default to 0, others default to 1
     cell_levels = {}
     for c in range(GRID_SIZE):
         for r in range(GRID_SIZE):
-            cell_levels[(c, r)] = 1
+            if terrain_map.get((c, r), 'plain').startswith('plain'):
+                cell_levels[(c, r)] = 0
+            else:
+                cell_levels[(c, r)] = 1
 
 
 # initial terrain map
 terrain_map, beacon_pos = generate_terrain_map()
-# set default level = 1 for all cells
+# set default levels: plains default to 0, others to 1
 cell_levels = {}
 for c in range(GRID_SIZE):
     for r in range(GRID_SIZE):
-        cell_levels[(c, r)] = 1
+        if terrain_map.get((c, r), 'plain').startswith('plain'):
+            cell_levels[(c, r)] = 0
+        else:
+            cell_levels[(c, r)] = 1
 
 # Button layout in the info panel
 BUTTON_W = 120
@@ -248,8 +254,13 @@ def get_boost_percent(source_terrain, source_level, target_terrain):
       - plain_magic => boosts tree and magic.
       - plain_water => boosts tree and rock.
       - all other combos => 0.
+    New rule: adjacency boost applies only when the source cell is at level 1.
     Percentages are expressed as decimals for multiplication.
     """
+    # Only sources at level 1 provide boosts per new rule
+    if source_level != 1:
+        return 0.0
+
     if source_terrain == 'plain' and source_level is not None:
         try:
             source_terrain = choose_plain_variant(*[0, 0])
@@ -260,15 +271,15 @@ def get_boost_percent(source_terrain, source_level, target_terrain):
         return 0.0
 
     if source_terrain in ('tree', 'rock', 'magic'):
-        return 0.25 if source_level <= 2 else 0.50
+        return 0.25
     if source_terrain == 'plain_wood':
-        return 0.25 if source_level <= 2 else 0.50
+        return 0.25
     if source_terrain == 'plain_rock':
-        return 0.50 if source_level <= 2 else 0.75
+        return 0.50
     if source_terrain == 'plain_magic':
-        return 0.25 if source_level <= 2 else 0.50
+        return 0.25
     if source_terrain == 'plain_water':
-        return 0.25 if source_level <= 2 else 0.50 if source_level == 3 else 0.75
+        return 0.25
     return 0.0
 
 
@@ -293,7 +304,9 @@ def compute_total_production_per_minute():
                 if not (0 <= nx < GRID_SIZE and 0 <= ny < GRID_SIZE):
                     continue
                 neighbor_type = terrain_map.get((nx, ny), 'plain')
-                neighbor_level = cell_levels.get((nx, ny), 1)
+                if neighbor_type == 'plain':
+                    neighbor_type = choose_plain_variant(nx, ny)
+                neighbor_level = cell_levels.get((nx, ny), 0)
                 boost_total += get_boost_percent(neighbor_type, neighbor_level, terrain)
 
         final_amt = base_amt * (1.0 + boost_total)
@@ -305,7 +318,7 @@ def compute_total_production_per_minute():
 # Determine plain subtype based on orthogonal neighbors
 def choose_plain_variant(center_col, center_row):
     """Return 'plain_rock' if >=2 orthogonal neighbors are 'rock',
-              'plain_magic' if >=1 are 'magic' (per updated rule), 
+              'plain_magic' if >=1 are 'magic' (per updated rule),
          else 'plain_wood'."""
     neighbors = [
         (center_col - 1, center_row),
@@ -331,7 +344,7 @@ def choose_plain_variant(center_col, center_row):
     # magic rule updated: require at least 1 orthogonal magic neighbor
     if magic_count >= 1:
         return 'plain_magic'
-    if water_count >=1:
+    if water_count >= 1:
         return 'plain_water'
     return 'plain_wood'
 
@@ -398,7 +411,7 @@ def compute_cell_boost_percent(center_col, center_row):
             # if neighbor is plain, evaluate its plain variant for source
             if source == 'plain':
                 source = choose_plain_variant(nx, ny)
-            neighbor_level = cell_levels.get((nx, ny), 1)
+            neighbor_level = cell_levels.get((nx, ny), 0)
             boost_total += get_boost_percent(source, neighbor_level, target)
     return boost_total
 
@@ -519,7 +532,7 @@ while running:
                     print(f"Ô ({clicked_col}, {clicked_row}) đã bị bóng tối bao phủ!")
                 else:
                     # Lấy level hiện tại (mặc định là 1 nếu chưa từng bấm)
-                    current_level = cell_levels.get(cell_key, 1)
+                    current_level = cell_levels.get(cell_key, 0 if terrain_map.get(cell_key, 'plain').startswith('plain') else 1)
 
                     # Tối đa level 4
                     if current_level >= 4:
@@ -700,7 +713,7 @@ while running:
                     display_name = ttype.capitalize()
                     display_key = ttype
 
-                level = cell_levels.get((hover_col, hover_row), 1)
+                level = cell_levels.get((hover_col, hover_row), 0 if terrain_map.get((hover_col, hover_row), 'plain').startswith('plain') else 1)
                 next_level = level + 1
 
                 # production for current level
