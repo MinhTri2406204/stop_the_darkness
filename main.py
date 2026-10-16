@@ -255,6 +255,44 @@ def choose_plain_variant(center_col, center_row):
     return 'plain_wood'
 
 
+# New: check whether a plain subtype can upgrade beyond level 2
+# Dependency positions relative to 3x3 (center at [1,1]): [[0,1],[1,0],[1,2],[2,1]] -> offsets: (-1,0),(0,-1),(0,1),(1,0)
+DEPENDENCY_OFFSETS = [(-1, 0), (0, -1), (0, 1), (1, 0)]
+
+
+def can_upgrade_plain_to_higher(center_col, center_row, plain_variant, target_level):
+    """Return True if plain at (center_col,center_row) of type plain_variant is allowed to upgrade to target_level.
+    Rules:
+      - Upgrades to level 2 are always allowed (subject to resources/costs).
+      - Upgrades to level 3 or 4 require the dependent terrains (tree/rock/magic) at the 4 orthogonal positions
+        to be present and at level 4. If any dependency position is out-of-bounds or not the required terrain at level 4,
+        the upgrade is blocked.
+    """
+    if target_level <= 2:
+        return True
+    # map plain variant to required terrain
+    mapping = {
+        'plain_wood': 'tree',
+        'plain_rock': 'rock',
+        'plain_magic': 'magic',
+    }
+    req = mapping.get(plain_variant)
+    if req is None:
+        # unknown plain variant -> block
+        return False
+    # check all dependency positions
+    for dx, dy in DEPENDENCY_OFFSETS:
+        nx = center_col + dx
+        ny = center_row + dy
+        if not (0 <= nx < GRID_SIZE and 0 <= ny < GRID_SIZE):
+            return False
+        if terrain_map.get((nx, ny)) != req:
+            return False
+        if cell_levels.get((nx, ny), 1) < 4:
+            return False
+    return True
+
+
 # ------------- Main loop -------------
 while running:
     dt = clock.tick(60)
@@ -384,11 +422,25 @@ while running:
                     plain_variant = None
                     if terrain_type == 'beacan':
                         cost_key = 'beacon'
-                    elif terrain_type == 'plain':
-                        plain_variant = choose_plain_variant(clicked_col, clicked_row)
+                    elif terrain_type.startswith('plain'):
+                        # if it's exactly 'plain', determine variant from neighbors; if already plain_..., keep it
+                        if terrain_type == 'plain':
+                            plain_variant = choose_plain_variant(clicked_col, clicked_row)
+                        else:
+                            plain_variant = terrain_type
                         cost_key = plain_variant
                     else:
                         cost_key = terrain_type
+
+                    # New rule: plains can always upgrade to level 2, but to upgrade to levels 3 or 4
+                    # the dependent terrains (at offsets [[0,1],[1,0],[1,2],[2,1]]) must be the matching terrain
+                    # and be at level 4.
+                    next_level = current_level + 1
+                    if plain_variant is not None and next_level > 2:
+                        allowed = can_upgrade_plain_to_higher(clicked_col, clicked_row, plain_variant, next_level)
+                        if not allowed:
+                            print(f"Không thể nâng ô {cell_key} lên Level {next_level}: các ô phụ thuộc chưa đạt Level 4")
+                            continue
 
                     cost = costs.get(cost_key)
 
