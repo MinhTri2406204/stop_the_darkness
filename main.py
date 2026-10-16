@@ -422,12 +422,9 @@ while running:
         # Total production per minute
         total_prod = compute_total_production_per_minute()
         tpy = start_y + len(keys) * 48 + 6
-        tp_text = res_font.render('Total prod/min:', True, WHITE)
-        screen.blit(tp_text, (GRID_PIXELS + 30, tpy))
-        # list totals
         for i, (rk, rv) in enumerate(total_prod.items()):
             tpv = small_font.render(f"{rk.capitalize()}: {rv}", True, WHITE)
-            screen.blit(tpv, (GRID_PIXELS + 140, tpy + i * 18))
+            screen.blit(tpv, (GRID_PIXELS + 30, tpy + i * 18))
 
         # Hover info: show info about terrain under mouse
         mouse_x, mouse_y = pygame.mouse.get_pos()
