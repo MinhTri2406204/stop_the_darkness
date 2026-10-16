@@ -320,15 +320,7 @@ while running:
         for c, r in dark_cells:
             pygame.draw.rect(screen, BLACK, (c * CELL_SIZE, r * CELL_SIZE, CELL_SIZE, CELL_SIZE))
 
-    # 3. Vẽ level trên các ô (nếu có) - only when playing
-    if playing:
-        for (c, r), lvl in cell_levels.items():
-            if 0 <= c < GRID_SIZE and 0 <= r < GRID_SIZE:
-                # If cell is dark, skip drawing level (it's covered)
-                if (c, r) in dark_cells:
-                    continue
-                lvl_text = level_font.render(str(lvl), True, (0, 0, 0))
-                screen.blit(lvl_text, (c * CELL_SIZE + CELL_SIZE - 18, r * CELL_SIZE + CELL_SIZE - 20))
+    # 3. Vẽ level trên các ô (nếu có) - removed: levels no longer drawn on grid
 
     # 4. Vẽ lưới
     for i in range(GRID_SIZE + 1):
