@@ -78,6 +78,7 @@ resources = None  # will be dict like {'wood':12,...}
 
 
 dark_cells = set()
+# start position tracked but not shown until playing
 dark_cells.add((col, row))
 
 cell_levels = {}
@@ -227,12 +228,18 @@ while running:
                     # clicked inside panel but not on buttons; ignore
                     continue
 
+                # Click inside grid
                 clicked_col = mouse_x // CELL_SIZE
                 clicked_row = mouse_y // CELL_SIZE
 
                 # Kiểm tra nằm trong lưới
                 if not (0 <= clicked_col < GRID_SIZE and 0 <= clicked_row < GRID_SIZE):
                     print(f"Click ngoài lưới: ({clicked_col}, {clicked_row})")
+                    continue
+
+                # If not playing, do not allow interacting with grid (no levels, no dark)
+                if not playing:
+                    print("Press Play to start and enable interactions")
                     continue
 
                 cell_key = (clicked_col, clicked_row)
@@ -279,21 +286,21 @@ while running:
                     cell_levels[cell_key] = current_level + 1
                     print(f"Ô {cell_key} đã tăng lên Level: {cell_levels[cell_key]}")
 
-+                    # Increase global cost values for this terrain type by 1 per resource key
-+                    # Applies to terrain types: tree, rock, plain, magic, plain_wood, plain_rock, plain_magic
-+                    try:
-+                        # only adjust if this terrain has an entry in costs
-+                        if cost_key in costs:
-+                            for rkey in list(costs[cost_key].keys()):
-+                                # ensure numeric
-+                                try:
-+                                    costs[cost_key][rkey] = int(costs[cost_key][rkey]) + 1
-+                                except Exception:
-+                                    pass
-+                            print(f"Increased costs for '{cost_key}' to: {costs[cost_key]}")
-+                    except Exception as e:
-+                        print("Error increasing costs:", e)
-+
+                    # Increase global cost values for this terrain type by 1 per resource key
+                    # Applies to terrain types: tree, rock, plain, magic, plain_wood, plain_rock, plain_magic
+                    try:
+                        # only adjust if this terrain has an entry in costs
+                        if cost_key in costs:
+                            for rkey in list(costs[cost_key].keys()):
+                                # ensure numeric
+                                try:
+                                    costs[cost_key][rkey] = int(costs[cost_key][rkey]) + 1
+                                except Exception:
+                                    pass
+                            print(f"Increased costs for '{cost_key}' to: {costs[cost_key]}")
+                    except Exception as e:
+                        print("Error increasing costs:", e)
+
     screen.fill(WHITE)
 
     # Draw left: 1. Vẽ terrains
@@ -306,18 +313,20 @@ while running:
         text = font.render(label, True, (255, 255, 255))
         screen.blit(text, (c * CELL_SIZE + 4, r * CELL_SIZE + 2))
 
-    # 2. Vẽ các ô bóng tối (đè lên terrains)
-    for c, r in dark_cells:
-        pygame.draw.rect(screen, BLACK, (c * CELL_SIZE, r * CELL_SIZE, CELL_SIZE, CELL_SIZE))
+    # 2. Vẽ các ô bóng tối (đè lên terrains) - only when playing
+    if playing:
+        for c, r in dark_cells:
+            pygame.draw.rect(screen, BLACK, (c * CELL_SIZE, r * CELL_SIZE, CELL_SIZE, CELL_SIZE))
 
-    # 3. Vẽ level trên các ô (nếu có)
-    for (c, r), lvl in cell_levels.items():
-        if 0 <= c < GRID_SIZE and 0 <= r < GRID_SIZE:
-            # If cell is dark, skip drawing level (it's covered)
-            if (c, r) in dark_cells:
-                continue
-            lvl_text = level_font.render(str(lvl), True, (0, 0, 0))
-            screen.blit(lvl_text, (c * CELL_SIZE + CELL_SIZE - 18, r * CELL_SIZE + CELL_SIZE - 20))
+    # 3. Vẽ level trên các ô (nếu có) - only when playing
+    if playing:
+        for (c, r), lvl in cell_levels.items():
+            if 0 <= c < GRID_SIZE and 0 <= r < GRID_SIZE:
+                # If cell is dark, skip drawing level (it's covered)
+                if (c, r) in dark_cells:
+                    continue
+                lvl_text = level_font.render(str(lvl), True, (0, 0, 0))
+                screen.blit(lvl_text, (c * CELL_SIZE + CELL_SIZE - 18, r * CELL_SIZE + CELL_SIZE - 20))
 
     # 4. Vẽ lưới
     for i in range(GRID_SIZE + 1):
