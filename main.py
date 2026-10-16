@@ -661,27 +661,84 @@ while running:
                 # production for current level
                 cur_res_key, cur_prod_amt = get_cell_production_per_minute(ttype, level)
 
-                # draw current info box (include production)
-                # make box taller to fit production line
-                cur_box_h = 80
+                # --- compute adjacency boost breakdown ---
+                boost_details = []  # list of ((nx,ny), neighbor_type, neighbor_level, percent_decimal)
+                boost_total = 0.0
+                for dx in (-1, 0, 1):
+                    for dy in (-1, 0, 1):
+                        if dx == 0 and dy == 0:
+                            continue
+                        nx = hover_col + dx
+                        ny = hover_row + dy
+                        if not (0 <= nx < GRID_SIZE and 0 <= ny < GRID_SIZE):
+                            continue
+                        neighbor_type = terrain_map.get((nx, ny), 'plain')
+                        neighbor_level = cell_levels.get((nx, ny), 1)
+                        p = get_boost_percent(neighbor_type, neighbor_level, ttype)
+                        if p and p > 0.0:
+                            boost_details.append(((nx, ny), neighbor_type, neighbor_level, p))
+                            boost_total += p
+
+                # draw current info box (include production + adjacency boosts)
+                # make box taller to fit production line + boosts
+                # base height + 18px per boost item (cap to avoid overflow)
+                max_boost_lines = 8
+                boost_lines = min(len(boost_details), max_boost_lines)
+                cur_box_h = 100 + boost_lines * 18
                 pygame.draw.rect(screen, (50, 50, 50), (info_x, hover_info_y, info_w, cur_box_h))
                 pygame.draw.rect(screen, WHITE, (info_x, hover_info_y, info_w, cur_box_h), 1)
                 line1 = res_font.render(f"Terrain: {display_name}", True, WHITE)
                 line2 = res_font.render(f"Level: {level}", True, WHITE)
                 screen.blit(line1, (info_x + 8, hover_info_y + 6))
-                screen.blit(line2, (info_x + 8, hover_info_y + 32))
-                prod_label = small_font.render("Production/min:", True, WHITE)
-                screen.blit(prod_label, (info_x + 8, hover_info_y + 56))
+                screen.blit(line2, (info_x + 8, hover_info_y + 30))
+
+                # base production
+                prod_label = small_font.render("Base prod/min:", True, WHITE)
+                screen.blit(prod_label, (info_x + 8, hover_info_y + 54))
                 if cur_res_key and cur_prod_amt:
                     prod_val = small_font.render(f"{cur_res_key.capitalize()}: {cur_prod_amt}", True, WHITE)
-                    screen.blit(prod_val, (info_x + 140, hover_info_y + 56))
+                    screen.blit(prod_val, (info_x + 140, hover_info_y + 54))
                 else:
                     prod_val = small_font.render("-", True, WHITE)
-                    screen.blit(prod_val, (info_x + 140, hover_info_y + 56))
+                    screen.blit(prod_val, (info_x + 140, hover_info_y + 54))
 
-                # If not max level, draw next-level box below
+                # adjacency boost lines
+                boosts_y = hover_info_y + 78
+                boost_header = small_font.render("Adjacency boosts:", True, WHITE)
+                screen.blit(boost_header, (info_x + 8, boosts_y))
+                line_index = 1
+                for ((nx, ny), ntype, nlevel, p) in boost_details[:max_boost_lines]:
+                    perc = int(round(p * 100))
+                    # present neighbor as coord and short type
+                    nlabel = f"({nx},{ny}) {ntype.capitalize()} L{nlevel}: +{perc}%"
+                    bl = small_font.render(nlabel, True, WHITE)
+                    screen.blit(bl, (info_x + 8, boosts_y + line_index * 18))
+                    line_index += 1
+                if len(boost_details) > max_boost_lines:
+                    more = small_font.render(f"...and {len(boost_details)-max_boost_lines} more", True, WHITE)
+                    screen.blit(more, (info_x + 8, boosts_y + line_index * 18))
+                    line_index += 1
+
+                # total boost and effective production
+                total_perc = int(round(boost_total * 100))
+                eff_prod = None
+                if cur_prod_amt:
+                    eff_prod = cur_prod_amt * (1.0 + boost_total)
+                total_y = boosts_y + line_index * 18 + 6
+                tot_txt = small_font.render(f"Total boost: +{total_perc}%", True, WHITE)
+                screen.blit(tot_txt, (info_x + 8, total_y))
+                eff_txt = small_font.render("Effective prod/min:", True, WHITE)
+                screen.blit(eff_txt, (info_x + 8, total_y + 18))
+                if eff_prod is not None and cur_res_key:
+                    eff_val = small_font.render(f"{cur_res_key.capitalize()}: {round(eff_prod,2)}", True, WHITE)
+                    screen.blit(eff_val, (info_x + 140, total_y + 18))
+                else:
+                    eff_val = small_font.render("-", True, WHITE)
+                    screen.blit(eff_val, (info_x + 140, total_y + 18))
+
+                # If not max level, draw next-level box below (unchanged)
                 if level < 4:
-                    box2_y = hover_info_y + cur_box_h + 10
+                    box2_y = total_y + 48
                     pygame.draw.rect(screen, (50, 50, 50), (info_x, box2_y, info_w, 100))
                     pygame.draw.rect(screen, WHITE, (info_x, box2_y, info_w, 100), 1)
                     nl = res_font.render(f"Next Level: {next_level}", True, WHITE)
@@ -695,7 +752,7 @@ while running:
                     if cost_entry:
                         # show only wood/rock/mana (magic) if present
                         cx = info_x + 8
-                        line_index = 0
+                        line_index2 = 0
                         for rk in ('wood', 'rock', 'mana'):
                             if rk in cost_entry:
                                 try:
@@ -705,9 +762,9 @@ while running:
                                 # label mapping: 'mana' -> 'Magic' for display
                                 label = 'Magic' if rk == 'mana' else rk.capitalize()
                                 ct = small_font.render(f"{label}: {new_val}", True, WHITE)
-                                screen.blit(ct, (cx, cost_text_y + line_index * 18))
-                                line_index += 1
-                        if line_index == 0:
+                                screen.blit(ct, (cx, cost_text_y + line_index2 * 18))
+                                line_index2 += 1
+                        if line_index2 == 0:
                             ct = small_font.render("Cost: -", True, WHITE)
                             screen.blit(ct, (info_x + 8, cost_text_y))
                     else:
