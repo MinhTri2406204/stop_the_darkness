@@ -1,7 +1,7 @@
 import pygame
 import random
 import json
-import pathlib from Path
+from pathlib import Path
 
 script_dir = Path(__file__).parent
 file_path = script_dir / "cost.json"
@@ -234,6 +234,8 @@ def get_boost_targets(terrain_name):
         return ['rock']
     if terrain_name == 'plain_magic':
         return ['tree', 'magic']
+    if terrain_name == 'plain_water':
+        return ['tree', 'rock']
     return []
 
 
@@ -244,6 +246,7 @@ def get_boost_percent(source_terrain, source_level, target_terrain):
       - plain_wood => boosts tree and rock.
       - plain_rock => boosts rock only; 50% at level 1-2 and 75% at level 3-4.
       - plain_magic => boosts tree and magic.
+      - plain_water => boosts tree and rock.
       - all other combos => 0.
     Percentages are expressed as decimals for multiplication.
     """
@@ -264,6 +267,8 @@ def get_boost_percent(source_terrain, source_level, target_terrain):
         return 0.50 if source_level <= 2 else 0.75
     if source_terrain == 'plain_magic':
         return 0.25 if source_level <= 2 else 0.50
+    if source_terrain == 'plain_water':
+        return 0.25 if source_level <= 2 else 0.50 if source_level == 3 else 0.75
     return 0.0
 
 
@@ -300,13 +305,15 @@ def compute_total_production_per_minute():
 # Determine plain subtype based on orthogonal neighbors
 def choose_plain_variant(center_col, center_row):
     """Return 'plain_rock' if >=2 orthogonal neighbors are 'rock',
-    'plain_magic' if >=1 are 'magic' (per updated rule), else 'plain_wood'."""
+              'plain_magic' if >=1 are 'magic' (per updated rule), 
+         else 'plain_wood'."""
     neighbors = [
         (center_col - 1, center_row),
         (center_col, center_row - 1),
         (center_col, center_row + 1),
         (center_col + 1, center_row),
     ]
+    water_count = 0
     rock_count = 0
     magic_count = 0
     for nx, ny in neighbors:
@@ -316,12 +323,16 @@ def choose_plain_variant(center_col, center_row):
                 rock_count += 1
             elif nt == 'magic':
                 magic_count += 1
+            elif nt == 'water':
+                water_count += 1
     # rock rule still requires >=2
     if rock_count >= 2:
         return 'plain_rock'
     # magic rule updated: require at least 1 orthogonal magic neighbor
     if magic_count >= 1:
         return 'plain_magic'
+    if water_count >=1:
+        return 'plain_water'
     return 'plain_wood'
 
 
@@ -345,6 +356,7 @@ def can_upgrade_plain_to_higher(center_col, center_row, plain_variant, target_le
         'plain_wood': 'tree',
         'plain_rock': 'rock',
         'plain_magic': 'magic',
+        'plain_water': 'water'
     }
     req = mapping.get(plain_variant)
     if req is None:
@@ -538,12 +550,12 @@ while running:
                     # If this was a plain cell, set the chosen plain variant on successful upgrade
                     try:
                         if plain_variant is not None:
-                            # set terrain subtype (plain_rock/plain_magic/plain_wood)
+                            # set terrain subtype (plain_rock/plain_magic/plain_wood/plain_water)
                             terrain_map[cell_key] = plain_variant
                             print(f"Ô {cell_key} plain subtype set to: {plain_variant}")
 
                         # Increase global cost values for this terrain type by 1 per resource key
-                        # Applies to terrain types: tree, rock, plain, magic, plain_wood, plain_rock, plain_magic
+                        # Applies to terrain types: tree, rock, plain, magic, plain_wood, plain_rock, plain_magic, plain_water
                         # only adjust if this terrain has an entry in costs
                         if cost_key in costs:
                             for rkey in list(costs[cost_key].keys()):
@@ -640,6 +652,8 @@ while running:
                         display_name = 'Mining village'
                     elif pv == 'plain_magic':
                         display_name = 'Magical village'
+                    elif pv == 'plain_water':
+                        display_name = 'Port village'
                     else:
                         display_name = 'Village'
                 elif ttype == 'plain_wood':
@@ -651,6 +665,9 @@ while running:
                 elif ttype == 'plain_magic':
                     display_name = 'Magical village'
                     display_key = 'plain_magic'
+                elif ttype == 'plain_water':
+                    display_name = 'Port village'
+                    display_key = 'plain_water'
                 else:
                     display_name = ttype.capitalize()
                     display_key = ttype
@@ -661,84 +678,27 @@ while running:
                 # production for current level
                 cur_res_key, cur_prod_amt = get_cell_production_per_minute(ttype, level)
 
-                # --- compute adjacency boost breakdown ---
-                boost_details = []  # list of ((nx,ny), neighbor_type, neighbor_level, percent_decimal)
-                boost_total = 0.0
-                for dx in (-1, 0, 1):
-                    for dy in (-1, 0, 1):
-                        if dx == 0 and dy == 0:
-                            continue
-                        nx = hover_col + dx
-                        ny = hover_row + dy
-                        if not (0 <= nx < GRID_SIZE and 0 <= ny < GRID_SIZE):
-                            continue
-                        neighbor_type = terrain_map.get((nx, ny), 'plain')
-                        neighbor_level = cell_levels.get((nx, ny), 1)
-                        p = get_boost_percent(neighbor_type, neighbor_level, ttype)
-                        if p and p > 0.0:
-                            boost_details.append(((nx, ny), neighbor_type, neighbor_level, p))
-                            boost_total += p
-
-                # draw current info box (include production + adjacency boosts)
-                # make box taller to fit production line + boosts
-                # base height + 18px per boost item (cap to avoid overflow)
-                max_boost_lines = 8
-                boost_lines = min(len(boost_details), max_boost_lines)
-                cur_box_h = 100 + boost_lines * 18
+                # draw current info box (include production)
+                # make box taller to fit production line
+                cur_box_h = 80
                 pygame.draw.rect(screen, (50, 50, 50), (info_x, hover_info_y, info_w, cur_box_h))
                 pygame.draw.rect(screen, WHITE, (info_x, hover_info_y, info_w, cur_box_h), 1)
                 line1 = res_font.render(f"Terrain: {display_name}", True, WHITE)
                 line2 = res_font.render(f"Level: {level}", True, WHITE)
                 screen.blit(line1, (info_x + 8, hover_info_y + 6))
-                screen.blit(line2, (info_x + 8, hover_info_y + 30))
-
-                # base production
-                prod_label = small_font.render("Base prod/min:", True, WHITE)
-                screen.blit(prod_label, (info_x + 8, hover_info_y + 54))
+                screen.blit(line2, (info_x + 8, hover_info_y + 32))
+                prod_label = small_font.render("Production/min:", True, WHITE)
+                screen.blit(prod_label, (info_x + 8, hover_info_y + 56))
                 if cur_res_key and cur_prod_amt:
                     prod_val = small_font.render(f"{cur_res_key.capitalize()}: {cur_prod_amt}", True, WHITE)
-                    screen.blit(prod_val, (info_x + 140, hover_info_y + 54))
+                    screen.blit(prod_val, (info_x + 140, hover_info_y + 56))
                 else:
                     prod_val = small_font.render("-", True, WHITE)
-                    screen.blit(prod_val, (info_x + 140, hover_info_y + 54))
+                    screen.blit(prod_val, (info_x + 140, hover_info_y + 56))
 
-                # adjacency boost lines
-                boosts_y = hover_info_y + 78
-                boost_header = small_font.render("Adjacency boosts:", True, WHITE)
-                screen.blit(boost_header, (info_x + 8, boosts_y))
-                line_index = 1
-                for ((nx, ny), ntype, nlevel, p) in boost_details[:max_boost_lines]:
-                    perc = int(round(p * 100))
-                    # present neighbor as coord and short type
-                    nlabel = f"({nx},{ny}) {ntype.capitalize()} L{nlevel}: +{perc}%"
-                    bl = small_font.render(nlabel, True, WHITE)
-                    screen.blit(bl, (info_x + 8, boosts_y + line_index * 18))
-                    line_index += 1
-                if len(boost_details) > max_boost_lines:
-                    more = small_font.render(f"...and {len(boost_details)-max_boost_lines} more", True, WHITE)
-                    screen.blit(more, (info_x + 8, boosts_y + line_index * 18))
-                    line_index += 1
-
-                # total boost and effective production
-                total_perc = int(round(boost_total * 100))
-                eff_prod = None
-                if cur_prod_amt:
-                    eff_prod = cur_prod_amt * (1.0 + boost_total)
-                total_y = boosts_y + line_index * 18 + 6
-                tot_txt = small_font.render(f"Total boost: +{total_perc}%", True, WHITE)
-                screen.blit(tot_txt, (info_x + 8, total_y))
-                eff_txt = small_font.render("Effective prod/min:", True, WHITE)
-                screen.blit(eff_txt, (info_x + 8, total_y + 18))
-                if eff_prod is not None and cur_res_key:
-                    eff_val = small_font.render(f"{cur_res_key.capitalize()}: {round(eff_prod,2)}", True, WHITE)
-                    screen.blit(eff_val, (info_x + 140, total_y + 18))
-                else:
-                    eff_val = small_font.render("-", True, WHITE)
-                    screen.blit(eff_val, (info_x + 140, total_y + 18))
-
-                # If not max level, draw next-level box below (unchanged)
+                # If not max level, draw next-level box below
                 if level < 4:
-                    box2_y = total_y + 48
+                    box2_y = hover_info_y + cur_box_h + 10
                     pygame.draw.rect(screen, (50, 50, 50), (info_x, box2_y, info_w, 100))
                     pygame.draw.rect(screen, WHITE, (info_x, box2_y, info_w, 100), 1)
                     nl = res_font.render(f"Next Level: {next_level}", True, WHITE)
@@ -752,7 +712,7 @@ while running:
                     if cost_entry:
                         # show only wood/rock/mana (magic) if present
                         cx = info_x + 8
-                        line_index2 = 0
+                        line_index = 0
                         for rk in ('wood', 'rock', 'mana'):
                             if rk in cost_entry:
                                 try:
@@ -762,9 +722,9 @@ while running:
                                 # label mapping: 'mana' -> 'Magic' for display
                                 label = 'Magic' if rk == 'mana' else rk.capitalize()
                                 ct = small_font.render(f"{label}: {new_val}", True, WHITE)
-                                screen.blit(ct, (cx, cost_text_y + line_index2 * 18))
-                                line_index2 += 1
-                        if line_index2 == 0:
+                                screen.blit(ct, (cx, cost_text_y + line_index * 18))
+                                line_index += 1
+                        if line_index == 0:
                             ct = small_font.render("Cost: -", True, WHITE)
                             screen.blit(ct, (info_x + 8, cost_text_y))
                     else:
