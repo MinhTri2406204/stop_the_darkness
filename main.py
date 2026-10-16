@@ -97,6 +97,12 @@ resources = None  # will be dict like {'wood':12,...}
 # Float accumulators for fractional production
 resource_accum = {}
 
+# Per-cell state for plain_wood special cost rules
+# plain_wood_seq_index[cell] -> integer index used to alternately add 2 or 3 when upgrading 0->1
+plain_wood_seq_index = {}
+# plain_wood_stored_base_costs[cell] -> dict of resource->int storing the base cost after alternation (used for later upgrades)
+plain_wood_stored_base_costs = {}
+
 
 dark_cells = set()
 # start position tracked but not shown until playing
@@ -318,7 +324,7 @@ def compute_total_production_per_minute():
 # Determine plain subtype based on orthogonal neighbors
 def choose_plain_variant(center_col, center_row):
     """Return 'plain_rock' if >=2 orthogonal neighbors are 'rock',
-              'plain_magic' if >=1 are 'magic' (per updated rule),
+              'plain_magic' if >=1 are 'magic' (per updated rule), 
          else 'plain_wood'."""
     neighbors = [
         (center_col - 1, center_row),
@@ -531,7 +537,7 @@ while running:
                 if cell_key in dark_cells:
                     print(f"Ô ({clicked_col}, {clicked_row}) đã bị bóng tối bao phủ!")
                 else:
-                    # Lấy level hiện tại (mặc định là 1 nếu chưa từng bấm)
+                    # Lấy level hiện tại (mặc định là 0 for plains, 1 for others)
                     current_level = cell_levels.get(cell_key, 0 if terrain_map.get(cell_key, 'plain').startswith('plain') else 1)
 
                     # Tối đa level 4
@@ -565,7 +571,44 @@ while running:
                             print(f"Không thể nâng ô {cell_key} lên Level {next_level}: các ô phụ thuộc chưa đạt Level 4")
                             continue
 
-                    cost = costs.get(cost_key)
+                    # SPECIAL: plain_wood custom cost rules
+                    cost = None
+                    if plain_variant == 'plain_wood':
+                        base_entry = costs.get('plain_wood', {})
+                        # Upgrading from 0 -> 1: compute stored base by adding alternately 2/3 per-cell sequence
+                        if current_level == 0 and next_level == 1:
+                            seq = plain_wood_seq_index.get(cell_key, 0)
+                            add_val = 2 if (seq % 2) == 0 else 3
+                            # compute stored base cost dict
+                            stored = {}
+                            for rkey, v in base_entry.items():
+                                try:
+                                    stored[rkey] = int(v) + add_val
+                                except Exception:
+                                    # non-numeric or missing -> keep original
+                                    try:
+                                        stored[rkey] = int(v)
+                                    except Exception:
+                                        stored[rkey] = v
+                            plain_wood_stored_base_costs[cell_key] = stored
+                            plain_wood_seq_index[cell_key] = seq + 1
+                            cost = stored
+                        else:
+                            # Upgrading from level >=1 to higher levels: use stored base if available else base_entry
+                            base = plain_wood_stored_base_costs.get(cell_key, {})
+                            if not base:
+                                base = base_entry
+                            # cost = base + base * 20% (per resource key)
+                            computed = {}
+                            for rkey, v in base.items():
+                                try:
+                                    bv = int(v)
+                                    computed[rkey] = int(bv + round(bv * 0.20))
+                                except Exception:
+                                    computed[rkey] = v
+                            cost = computed
+                    else:
+                        cost = costs.get(cost_key)
 
                     # If resources exists (playing), check and deduct; otherwise allow free upgrades (edit mode)
                     if resources is not None and cost:
@@ -606,6 +649,14 @@ while running:
                                 except Exception:
                                     pass
                             print(f"Increased costs for '{cost_key}' to: {costs[cost_key]}")
+                        # Additionally, if we updated stored base for this plain_wood cell earlier, optionally
+                        # increase its stored base to stay in sync with global increments
+                        if plain_variant == 'plain_wood' and cell_key in plain_wood_stored_base_costs:
+                            for rkey in list(plain_wood_stored_base_costs[cell_key].keys()):
+                                try:
+                                    plain_wood_stored_base_costs[cell_key][rkey] = int(plain_wood_stored_base_costs[cell_key][rkey]) + 1
+                                except Exception:
+                                    pass
                     except Exception as e:
                         print("Error increasing costs:", e)
 
