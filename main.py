@@ -43,6 +43,19 @@ except Exception as e:
     print("Warning: could not load cost.json:", e)
     costs = {}
 
+# Production table (per-minute production by terrain and level)
+PRODUCTION_TABLE = {
+    'tree': {2: 3, 3: 5, 4: 7},
+    'rock': {2: 2, 3: 5, 4: 8},
+    'magic': {2: 4, 3: 7, 4: 9},
+}
+# Map terrain type to resource key in resources dict
+TERRAIN_TO_RESOURCE = {
+    'tree': 'wood',
+    'rock': 'rock',
+    'magic': 'mana',
+}
+
 # Fonts
 font = pygame.font.SysFont(None, 18)
 level_font = pygame.font.SysFont(None, 20, bold=True)
@@ -77,6 +90,8 @@ playing = False
 
 # Resources (set when play starts)
 resources = None  # will be dict like {'wood':12,...}
+# Float accumulators for fractional production
+resource_accum = {}
 
 
 dark_cells = set()
@@ -117,7 +132,7 @@ def generate_terrain_map():
 
 
 def regenerate_map():
-    global terrain_map, beacon_pos, cell_levels, dark_cells, resources
+    global terrain_map, beacon_pos, cell_levels, dark_cells, resources, resource_accum
     global col, row, left_bound, right_bound, top_bound, bottom_bound, dir_index, move_timer
 
     terrain_map, beacon_pos = generate_terrain_map()
@@ -155,12 +170,42 @@ buttons_y = SCREEN_HEIGHT // 4 + 60
 play_button_rect = pygame.Rect(buttons_x, buttons_y, BUTTON_W, BUTTON_H)
 regen_button_rect = pygame.Rect(buttons_x + BUTTON_W + BUTTON_SPACING, buttons_y, BUTTON_W, BUTTON_H)
 
+
+def get_cell_production_per_minute(terrain_type, level):
+    """Return (resource_key, amount_per_minute) for a given terrain cell level. Returns (None, 0) if none."""
+    if terrain_type == 'beacan':
+        return None, 0
+    if terrain_type not in PRODUCTION_TABLE:
+        return None, 0
+    # Find the highest mapping <= level
+    mapping = PRODUCTION_TABLE[terrain_type]
+    possible_levels = sorted([l for l in mapping.keys() if l <= level])
+    if not possible_levels:
+        return None, 0
+    use_level = possible_levels[-1]
+    amount = mapping.get(use_level, 0)
+    res_key = TERRAIN_TO_RESOURCE.get(terrain_type)
+    return res_key, amount
+
+
+def compute_total_production_per_minute():
+    """Sum production per-minute across the whole grid and return dict resource->amt."""
+    totals = {}
+    for (c, r), lvl in cell_levels.items():
+        terrain = terrain_map.get((c, r), 'plain')
+        res_key, amt = get_cell_production_per_minute(terrain, lvl)
+        if res_key and amt:
+            totals[res_key] = totals.get(res_key, 0) + amt
+    return totals
+
+
 # ------------- Main loop -------------
 while running:
     dt = clock.tick(60)
     if playing:
         move_timer += dt
 
+    # Advance spiral movement
     if playing and move_timer >= MOVE_DELAY:
         move_timer = 0
 
@@ -197,6 +242,23 @@ while running:
                 col, row = next_col, next_row
                 dark_cells.add((col, row))
 
+    # Production accumulation (per-frame) - convert per-minute production into per-frame and accumulate
+    if playing and resources is not None:
+        # ensure accumulators exist
+        for k in resources.keys():
+            resource_accum.setdefault(k, 0.0)
+
+        prod_totals = compute_total_production_per_minute()  # resource->per-minute
+        # accumulate fractional production
+        for res_key, per_min in prod_totals.items():
+            add_amount = per_min * (dt / 60000.0)
+            resource_accum[res_key] = resource_accum.get(res_key, 0.0) + add_amount
+            # flush whole units to resources
+            whole = int(resource_accum[res_key])
+            if whole > 0:
+                resources[res_key] = resources.get(res_key, 0) + whole
+                resource_accum[res_key] -= whole
+
     # Xử lý sự kiện
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
@@ -219,6 +281,8 @@ while running:
                         playing = not playing
                         if playing and not was_playing:
                             resources = {'wood': 12, 'rock': 0, 'mana': 0, 'technology': 0}
+                            # init accumulators
+                            resource_accum = {k: 0.0 for k in resources.keys()}
                             print('Playing - resources initialized:', resources)
                         else:
                             print('Paused')
@@ -355,9 +419,19 @@ while running:
             screen.blit(name_surf, name_rect)
             screen.blit(val_surf, val_rect)
 
+        # Total production per minute
+        total_prod = compute_total_production_per_minute()
+        tpy = start_y + len(keys) * 48 + 6
+        tp_text = res_font.render('Total prod/min:', True, WHITE)
+        screen.blit(tp_text, (GRID_PIXELS + 30, tpy))
+        # list totals
+        for i, (rk, rv) in enumerate(total_prod.items()):
+            tpv = small_font.render(f"{rk.capitalize()}: {rv}", True, WHITE)
+            screen.blit(tpv, (GRID_PIXELS + 140, tpy + i * 18))
+
         # Hover info: show info about terrain under mouse
         mouse_x, mouse_y = pygame.mouse.get_pos()
-        hover_info_y = start_y + len(keys) * 48 + 12
+        hover_info_y = tpy + 36
         info_x = GRID_PIXELS + 20
         info_w = INFO_WIDTH - 40
 
@@ -380,8 +454,8 @@ while running:
 
                 # draw next-level info box below
                 box2_y = hover_info_y + 70
-                pygame.draw.rect(screen, (50, 50, 50), (info_x, box2_y, info_w, 90))
-                pygame.draw.rect(screen, WHITE, (info_x, box2_y, info_w, 90), 1)
+                pygame.draw.rect(screen, (50, 50, 50), (info_x, box2_y, info_w, 100))
+                pygame.draw.rect(screen, WHITE, (info_x, box2_y, info_w, 100), 1)
                 nl = res_font.render(f"Next Level: {next_level}", True, WHITE)
                 screen.blit(nl, (info_x + 8, box2_y + 6))
 
@@ -403,9 +477,16 @@ while running:
                     ct = small_font.render("Cost: -", True, WHITE)
                     screen.blit(ct, (info_x + 8, cost_text_y))
 
-                # production per minute placeholder
-                ppm = small_font.render("Production per minute: ", True, WHITE)
-                screen.blit(ppm, (info_x + 8, box2_y + 70))
+                # production per minute for this cell
+                res_key, prod_amt = get_cell_production_per_minute(ttype, level)
+                prod_text = small_font.render("Production/min:", True, WHITE)
+                screen.blit(prod_text, (info_x + 8, box2_y + 70))
+                if res_key and prod_amt:
+                    pval = small_font.render(f"{res_key.capitalize()}: {prod_amt}", True, WHITE)
+                    screen.blit(pval, (info_x + 140, box2_y + 70))
+                else:
+                    pval = small_font.render("-", True, WHITE)
+                    screen.blit(pval, (info_x + 140, box2_y + 70))
 
     else:
         # Title centered in the info panel
