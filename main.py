@@ -279,6 +279,21 @@ while running:
                     cell_levels[cell_key] = current_level + 1
                     print(f"Ô {cell_key} đã tăng lên Level: {cell_levels[cell_key]}")
 
++                    # Increase global cost values for this terrain type by 1 per resource key
++                    # Applies to terrain types: tree, rock, plain, magic, plain_wood, plain_rock, plain_magic
++                    try:
++                        # only adjust if this terrain has an entry in costs
++                        if cost_key in costs:
++                            for rkey in list(costs[cost_key].keys()):
++                                # ensure numeric
++                                try:
++                                    costs[cost_key][rkey] = int(costs[cost_key][rkey]) + 1
++                                except Exception:
++                                    pass
++                            print(f"Increased costs for '{cost_key}' to: {costs[cost_key]}")
++                    except Exception as e:
++                        print("Error increasing costs:", e)
++
     screen.fill(WHITE)
 
     # Draw left: 1. Vẽ terrains
