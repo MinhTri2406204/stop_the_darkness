@@ -202,7 +202,7 @@ def compute_total_production_per_minute():
 # Determine plain subtype based on orthogonal neighbors
 def choose_plain_variant(center_col, center_row):
     """Return 'plain_rock' if >=2 orthogonal neighbors are 'rock',
-    'plain_magic' if >=2 are 'magic', else 'plain_wood'."""
+    'plain_magic' if >=1 are 'magic' (per updated rule), else 'plain_wood'."""
     neighbors = [
         (center_col - 1, center_row),
         (center_col, center_row - 1),
@@ -218,9 +218,11 @@ def choose_plain_variant(center_col, center_row):
                 rock_count += 1
             elif nt == 'magic':
                 magic_count += 1
+    # rock rule still requires >=2
     if rock_count >= 2:
         return 'plain_rock'
-    if magic_count >= 2:
+    # magic rule updated: require at least 1 orthogonal magic neighbor
+    if magic_count >= 1:
         return 'plain_magic'
     return 'plain_wood'
 
