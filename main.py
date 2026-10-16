@@ -216,14 +216,80 @@ def get_cell_production_per_minute(terrain_type, level):
     return res_key, amount
 
 
+def get_boost_targets(terrain_name):
+    """Return the list of terrain types that a source terrain can boost."""
+    if terrain_name == 'tree':
+        return ['tree']
+    if terrain_name == 'rock':
+        return ['rock']
+    if terrain_name == 'magic':
+        return ['magic']
+    if terrain_name == 'plain_wood':
+        return ['tree', 'rock']
+    if terrain_name == 'plain_rock':
+        return ['rock']
+    if terrain_name == 'plain_magic':
+        return ['tree', 'magic']
+    return []
+
+
+def get_boost_percent(source_terrain, source_level, target_terrain):
+    """Percentage multiplier from adjacency boost rules.
+    Rules:
+      - tree / rock / magic => boost same type only.
+      - plain_wood => boosts tree and rock.
+      - plain_rock => boosts rock only; 50% at level 1-2 and 75% at level 3-4.
+      - plain_magic => boosts tree and magic.
+      - all other combos => 0.
+    Percentages are expressed as decimals for multiplication.
+    """
+    if source_terrain == 'plain' and source_level is not None:
+        try:
+            source_terrain = choose_plain_variant(*[0, 0])
+        except Exception:
+            pass
+
+    if target_terrain not in get_boost_targets(source_terrain):
+        return 0.0
+
+    if source_terrain in ('tree', 'rock', 'magic'):
+        return 0.25 if source_level <= 2 else 0.50
+    if source_terrain == 'plain_wood':
+        return 0.25 if source_level <= 2 else 0.50
+    if source_terrain == 'plain_rock':
+        return 0.50 if source_level <= 2 else 0.75
+    if source_terrain == 'plain_magic':
+        return 0.25 if source_level <= 2 else 0.50
+    return 0.0
+
+
 def compute_total_production_per_minute():
-    """Sum production per-minute across the whole grid and return dict resource->amt."""
+    """Sum production per-minute across the whole grid and return dict resource->amt.
+    Each adjacent terrain within the 3x3 area contributes a boost to the target cell's output.
+    """
     totals = {}
     for (c, r), lvl in cell_levels.items():
         terrain = terrain_map.get((c, r), 'plain')
-        res_key, amt = get_cell_production_per_minute(terrain, lvl)
-        if res_key and amt:
-            totals[res_key] = totals.get(res_key, 0) + amt
+        res_key, base_amt = get_cell_production_per_minute(terrain, lvl)
+        if not res_key or base_amt == 0:
+            continue
+
+        boost_total = 0.0
+        for dx in (-1, 0, 1):
+            for dy in (-1, 0, 1):
+                if dx == 0 and dy == 0:
+                    continue
+                nx = c + dx
+                ny = r + dy
+                if not (0 <= nx < GRID_SIZE and 0 <= ny < GRID_SIZE):
+                    continue
+                neighbor_type = terrain_map.get((nx, ny), 'plain')
+                neighbor_level = cell_levels.get((nx, ny), 1)
+                boost_total += get_boost_percent(neighbor_type, neighbor_level, terrain)
+
+        final_amt = base_amt * (1.0 + boost_total)
+        totals[res_key] = totals.get(res_key, 0) + final_amt
+
     return totals
 
 
