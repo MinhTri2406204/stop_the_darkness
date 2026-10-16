@@ -444,49 +444,63 @@ while running:
                 level = cell_levels.get((hover_col, hover_row), 1)
                 next_level = level + 1
 
-                # draw current info box
-                pygame.draw.rect(screen, (50, 50, 50), (info_x, hover_info_y, info_w, 60))
-                pygame.draw.rect(screen, WHITE, (info_x, hover_info_y, info_w, 60), 1)
+                # production for current level
+                cur_res_key, cur_prod_amt = get_cell_production_per_minute(ttype, level)
+
+                # draw current info box (include production)
+                # make box taller to fit production line
+                cur_box_h = 80
+                pygame.draw.rect(screen, (50, 50, 50), (info_x, hover_info_y, info_w, cur_box_h))
+                pygame.draw.rect(screen, WHITE, (info_x, hover_info_y, info_w, cur_box_h), 1)
                 line1 = res_font.render(f"Terrain: {display_name}", True, WHITE)
                 line2 = res_font.render(f"Level: {level}", True, WHITE)
                 screen.blit(line1, (info_x + 8, hover_info_y + 6))
-                screen.blit(line2, (info_x + 8, hover_info_y + 30))
-
-                # draw next-level info box below
-                box2_y = hover_info_y + 70
-                pygame.draw.rect(screen, (50, 50, 50), (info_x, box2_y, info_w, 100))
-                pygame.draw.rect(screen, WHITE, (info_x, box2_y, info_w, 100), 1)
-                nl = res_font.render(f"Next Level: {next_level}", True, WHITE)
-                screen.blit(nl, (info_x + 8, box2_y + 6))
-
-                # compute cost after +1 for the terrain type
-                cost_key = 'beacon' if ttype == 'beacan' else ttype
-                cost_entry = costs.get(cost_key)
-                cost_text_y = box2_y + 36
-                if cost_entry:
-                    # show each resource with value+1
-                    cx = info_x + 8
-                    for i, (rk, rv) in enumerate(cost_entry.items()):
-                        try:
-                            new_val = int(rv) + 1
-                        except Exception:
-                            new_val = rv
-                        ct = small_font.render(f"{rk.capitalize()}: {new_val}", True, WHITE)
-                        screen.blit(ct, (cx, cost_text_y + i * 18))
+                screen.blit(line2, (info_x + 8, hover_info_y + 32))
+                prod_label = small_font.render("Production/min:", True, WHITE)
+                screen.blit(prod_label, (info_x + 8, hover_info_y + 56))
+                if cur_res_key and cur_prod_amt:
+                    prod_val = small_font.render(f"{cur_res_key.capitalize()}: {cur_prod_amt}", True, WHITE)
+                    screen.blit(prod_val, (info_x + 140, hover_info_y + 56))
                 else:
-                    ct = small_font.render("Cost: -", True, WHITE)
-                    screen.blit(ct, (info_x + 8, cost_text_y))
+                    prod_val = small_font.render("-", True, WHITE)
+                    screen.blit(prod_val, (info_x + 140, hover_info_y + 56))
 
-                # production per minute for this cell
-                res_key, prod_amt = get_cell_production_per_minute(ttype, level)
-                prod_text = small_font.render("Production/min:", True, WHITE)
-                screen.blit(prod_text, (info_x + 8, box2_y + 70))
-                if res_key and prod_amt:
-                    pval = small_font.render(f"{res_key.capitalize()}: {prod_amt}", True, WHITE)
-                    screen.blit(pval, (info_x + 140, box2_y + 70))
-                else:
-                    pval = small_font.render("-", True, WHITE)
-                    screen.blit(pval, (info_x + 140, box2_y + 70))
+                # If not max level, draw next-level box below
+                if level < 4:
+                    box2_y = hover_info_y + cur_box_h + 10
+                    pygame.draw.rect(screen, (50, 50, 50), (info_x, box2_y, info_w, 100))
+                    pygame.draw.rect(screen, WHITE, (info_x, box2_y, info_w, 100), 1)
+                    nl = res_font.render(f"Next Level: {next_level}", True, WHITE)
+                    screen.blit(nl, (info_x + 8, box2_y + 6))
+
+                    # compute cost after +1 for the terrain type
+                    cost_key = 'beacon' if ttype == 'beacan' else ttype
+                    cost_entry = costs.get(cost_key)
+                    cost_text_y = box2_y + 36
+                    if cost_entry:
+                        # show each resource with value+1
+                        cx = info_x + 8
+                        for i, (rk, rv) in enumerate(cost_entry.items()):
+                            try:
+                                new_val = int(rv) + 1
+                            except Exception:
+                                new_val = rv
+                            ct = small_font.render(f"{rk.capitalize()}: {new_val}", True, WHITE)
+                            screen.blit(ct, (cx, cost_text_y + i * 18))
+                    else:
+                        ct = small_font.render("Cost: -", True, WHITE)
+                        screen.blit(ct, (info_x + 8, cost_text_y))
+
+                    # production per minute for next level (show what next will produce)
+                    next_res_key, next_prod_amt = get_cell_production_per_minute(ttype, next_level)
+                    prod_text = small_font.render("Production/min:", True, WHITE)
+                    screen.blit(prod_text, (info_x + 8, box2_y + 70))
+                    if next_res_key and next_prod_amt:
+                        pval = small_font.render(f"{next_res_key.capitalize()}: {next_prod_amt}", True, WHITE)
+                        screen.blit(pval, (info_x + 140, box2_y + 70))
+                    else:
+                        pval = small_font.render("-", True, WHITE)
+                        screen.blit(pval, (info_x + 140, box2_y + 70))
 
     else:
         # Title centered in the info panel
