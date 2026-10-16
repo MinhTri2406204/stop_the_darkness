@@ -186,6 +186,7 @@ def regenerate_map():
             if t in ('plain_wood', 'plain_rock', 'plain_water'):
                 cell_levels[(c, r)] = 0
             else:
+                # ensure water and all other terrains have explicit level entries
                 cell_levels[(c, r)] = 1
 
 
@@ -526,7 +527,16 @@ while running:
                 if cell_key in dark_cells:
                     print(f"Ô ({clicked_col}, {clicked_row}) đã bị bóng tối bao phủ!")
                 else:
-                    # Lấy level hiện tại (mặc định là 1 nếu chưa từng bấm)
+                    # Ensure the cell has a level entry (fix for water/plain variants missing levels)
+                    if cell_key not in cell_levels:
+                        t_init = terrain_map.get(cell_key, 'plain')
+                        if t_init in ('plain_wood', 'plain_rock', 'plain_water'):
+                            cell_levels[cell_key] = 0
+                        else:
+                            # water and other terrains default to level 1
+                            cell_levels[cell_key] = 1
+
+                    # Lấy level hiện tại
                     current_level = cell_levels.get(cell_key, 1)
 
                     # Tối đa level 4
