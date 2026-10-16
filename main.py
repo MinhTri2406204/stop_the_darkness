@@ -47,6 +47,8 @@ except Exception as e:
 font = pygame.font.SysFont(None, 18)
 level_font = pygame.font.SysFont(None, 20, bold=True)
 title_font = pygame.font.SysFont(None, 40, bold=True)
+res_font = pygame.font.SysFont(None, 28)
+small_font = pygame.font.SysFont(None, 16)
 
 clock = pygame.time.Clock()
 
@@ -347,7 +349,6 @@ while running:
         screen.blit(title_surface, title_rect)
 
         # Draw resources list
-        res_font = pygame.font.SysFont(None, 28)
         labels = ['Wood', 'Rock', 'Mana', 'Technology']
         keys = ['wood', 'rock', 'mana', 'technology']
         start_y = 120
@@ -361,6 +362,58 @@ while running:
             val_rect.topright = (GRID_PIXELS + INFO_WIDTH - 30, y)
             screen.blit(name_surf, name_rect)
             screen.blit(val_surf, val_rect)
+
+        # Hover info: show info about terrain under mouse
+        mouse_x, mouse_y = pygame.mouse.get_pos()
+        hover_info_y = start_y + len(keys) * 48 + 12
+        info_x = GRID_PIXELS + 20
+        info_w = INFO_WIDTH - 40
+
+        if mouse_x < GRID_PIXELS and 0 <= mouse_x < GRID_PIXELS and 0 <= mouse_y < SCREEN_HEIGHT:
+            hover_col = mouse_x // CELL_SIZE
+            hover_row = mouse_y // CELL_SIZE
+            if 0 <= hover_col < GRID_SIZE and 0 <= hover_row < GRID_SIZE:
+                ttype = terrain_map.get((hover_col, hover_row), 'plain')
+                display_name = 'Beacon' if ttype == 'beacan' else ttype.capitalize()
+                level = cell_levels.get((hover_col, hover_row), 1)
+                next_level = level + 1
+
+                # draw current info box
+                pygame.draw.rect(screen, (50, 50, 50), (info_x, hover_info_y, info_w, 60))
+                pygame.draw.rect(screen, WHITE, (info_x, hover_info_y, info_w, 60), 1)
+                line1 = res_font.render(f"Terrain: {display_name}", True, WHITE)
+                line2 = res_font.render(f"Level: {level}", True, WHITE)
+                screen.blit(line1, (info_x + 8, hover_info_y + 6))
+                screen.blit(line2, (info_x + 8, hover_info_y + 30))
+
+                # draw next-level info box below
+                box2_y = hover_info_y + 70
+                pygame.draw.rect(screen, (50, 50, 50), (info_x, box2_y, info_w, 90))
+                pygame.draw.rect(screen, WHITE, (info_x, box2_y, info_w, 90), 1)
+                nl = res_font.render(f"Next Level: {next_level}", True, WHITE)
+                screen.blit(nl, (info_x + 8, box2_y + 6))
+
+                # compute cost after +1 for the terrain type
+                cost_key = 'beacon' if ttype == 'beacan' else ttype
+                cost_entry = costs.get(cost_key)
+                cost_text_y = box2_y + 36
+                if cost_entry:
+                    # show each resource with value+1
+                    cx = info_x + 8
+                    for i, (rk, rv) in enumerate(cost_entry.items()):
+                        try:
+                            new_val = int(rv) + 1
+                        except Exception:
+                            new_val = rv
+                        ct = small_font.render(f"{rk.capitalize()}: {new_val}", True, WHITE)
+                        screen.blit(ct, (cx, cost_text_y + i * 18))
+                else:
+                    ct = small_font.render("Cost: -", True, WHITE)
+                    screen.blit(ct, (info_x + 8, cost_text_y))
+
+                # production per minute placeholder
+                ppm = small_font.render("Production per minute: ", True, WHITE)
+                screen.blit(ppm, (info_x + 8, box2_y + 70))
 
     else:
         # Title centered in the info panel
