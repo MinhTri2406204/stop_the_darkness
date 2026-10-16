@@ -474,7 +474,16 @@ while running:
             hover_row = mouse_y // CELL_SIZE
             if 0 <= hover_col < GRID_SIZE and 0 <= hover_row < GRID_SIZE:
                 ttype = terrain_map.get((hover_col, hover_row), 'plain')
-                display_name = 'Beacon' if ttype == 'beacan' else ttype.capitalize()
+                if ttype == 'beacan':
+                    display_name = 'Beacon'
+                elif ttype == 'plain_wood':
+                    display_name = 'Village'
+                elif ttype == 'plain_rock':
+                    display_name = 'Mining village'
+                elif ttype == 'plain_magic':
+                    display_name = 'Magical village'
+                else:
+                    display_name = ttype.capitalize()
                 level = cell_levels.get((hover_col, hover_row), 1)
                 next_level = level + 1
 
