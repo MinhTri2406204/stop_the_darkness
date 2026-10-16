@@ -199,6 +199,32 @@ def compute_total_production_per_minute():
     return totals
 
 
+# Determine plain subtype based on orthogonal neighbors
+def choose_plain_variant(center_col, center_row):
+    """Return 'plain_rock' if >=2 orthogonal neighbors are 'rock',
+    'plain_magic' if >=2 are 'magic', else 'plain_wood'."""
+    neighbors = [
+        (center_col - 1, center_row),
+        (center_col, center_row - 1),
+        (center_col, center_row + 1),
+        (center_col + 1, center_row),
+    ]
+    rock_count = 0
+    magic_count = 0
+    for nx, ny in neighbors:
+        if 0 <= nx < GRID_SIZE and 0 <= ny < GRID_SIZE:
+            nt = terrain_map.get((nx, ny), 'plain')
+            if nt == 'rock':
+                rock_count += 1
+            elif nt == 'magic':
+                magic_count += 1
+    if rock_count >= 2:
+        return 'plain_rock'
+    if magic_count >= 2:
+        return 'plain_magic'
+    return 'plain_wood'
+
+
 # ------------- Main loop -------------
 while running:
     dt = clock.tick(60)
@@ -324,8 +350,13 @@ while running:
 
                     # Determine cost key. map terrain name 'beacan' -> 'beacon'
                     terrain_type = terrain_map.get(cell_key, 'plain')
+                    # handle plain subtype logic: determine cost key and later set terrain if upgrade succeeds
+                    plain_variant = None
                     if terrain_type == 'beacan':
                         cost_key = 'beacon'
+                    elif terrain_type == 'plain':
+                        plain_variant = choose_plain_variant(clicked_col, clicked_row)
+                        cost_key = plain_variant
                     else:
                         cost_key = terrain_type
 
@@ -352,9 +383,15 @@ while running:
                     cell_levels[cell_key] = current_level + 1
                     print(f"Ô {cell_key} đã tăng lên Level: {cell_levels[cell_key]}")
 
-                    # Increase global cost values for this terrain type by 1 per resource key
-                    # Applies to terrain types: tree, rock, plain, magic, plain_wood, plain_rock, plain_magic
+                    # If this was a plain cell, set the chosen plain variant on successful upgrade
                     try:
+                        if plain_variant is not None:
+                            # set terrain subtype (plain_rock/plain_magic/plain_wood)
+                            terrain_map[cell_key] = plain_variant
+                            print(f"Ô {cell_key} plain subtype set to: {plain_variant}")
+
+                        # Increase global cost values for this terrain type by 1 per resource key
+                        # Applies to terrain types: tree, rock, plain, magic, plain_wood, plain_rock, plain_magic
                         # only adjust if this terrain has an entry in costs
                         if cost_key in costs:
                             for rkey in list(costs[cost_key].keys()):
