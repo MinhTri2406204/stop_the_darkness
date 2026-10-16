@@ -1,5 +1,6 @@
 import pygame
 import random
+import json
 
 pygame.init()
 pygame.font.init()
@@ -33,6 +34,14 @@ TERRAIN_COLORS = {
     'magic': (138, 43, 226),
     'beacan': (255, 215, 0),  # special beacon cell (gold)
 }
+
+# load costs
+try:
+    with open("cost.json", "r", encoding="utf-8") as f:
+        costs = json.load(f)
+except Exception as e:
+    print("Warning: could not load cost.json:", e)
+    costs = {}
 
 # Fonts
 font = pygame.font.SysFont(None, 18)
@@ -105,7 +114,7 @@ def generate_terrain_map():
 
 
 def regenerate_map():
-    global terrain_map, beacon_pos, cell_levels, dark_cells
+    global terrain_map, beacon_pos, cell_levels, dark_cells, resources
     global col, row, left_bound, right_bound, top_bound, bottom_bound, dir_index, move_timer
 
     terrain_map, beacon_pos = generate_terrain_map()
@@ -119,11 +128,20 @@ def regenerate_map():
     move_timer = 0
     # reset dark and levels
     dark_cells = {(col, row)}
+    # reset all levels to 1
     cell_levels = {}
+    for c in range(GRID_SIZE):
+        for r in range(GRID_SIZE):
+            cell_levels[(c, r)] = 1
 
 
 # initial terrain map
 terrain_map, beacon_pos = generate_terrain_map()
+# set default level = 1 for all cells
+cell_levels = {}
+for c in range(GRID_SIZE):
+    for r in range(GRID_SIZE):
+        cell_levels[(c, r)] = 1
 
 # Button layout in the info panel
 BUTTON_W = 120
@@ -223,15 +241,43 @@ while running:
                 if cell_key in dark_cells:
                     print(f"Ô ({clicked_col}, {clicked_row}) đã bị bóng tối bao phủ!")
                 else:
-                    # Lấy level hiện tại (mặc định là 0 nếu chưa từng bấm)
-                    current_level = cell_levels.get(cell_key, 0)
+                    # Lấy level hiện tại (mặc định là 1 nếu chưa từng bấm)
+                    current_level = cell_levels.get(cell_key, 1)
 
-                    # Tăng level nếu chưa đạt level 4
-                    if current_level < 4:
-                        cell_levels[cell_key] = current_level + 1
-                        print(f"Ô {cell_key} đã tăng lên Level: {cell_levels[cell_key]}")
-                    else:
+                    # Tối đa level 4
+                    if current_level >= 4:
                         print(f"Ô {cell_key} đã đạt LEVEL TỐI ĐA (Level 4)!")
+                        continue
+
+                    # Determine cost key. map terrain name 'beacan' -> 'beacon'
+                    terrain_type = terrain_map.get(cell_key, 'plain')
+                    if terrain_type == 'beacan':
+                        cost_key = 'beacon'
+                    else:
+                        cost_key = terrain_type
+
+                    cost = costs.get(cost_key)
+
+                    # If resources exists (playing), check and deduct; otherwise allow free upgrades (edit mode)
+                    if resources is not None and cost:
+                        # check resource sufficiency
+                        enough = True
+                        for res_name, amt in cost.items():
+                            # 'mana' in cost maps to resources['mana']
+                            if resources.get(res_name, 0) < amt:
+                                enough = False
+                                break
+                        if not enough:
+                            print(f"Không đủ tài nguyên để nâng ô {cell_key} ({terrain_type}) — cần {cost}")
+                            continue
+                        # deduct
+                        for res_name, amt in cost.items():
+                            resources[res_name] = resources.get(res_name, 0) - amt
+                        print(f"Đã trừ tài nguyên {cost} cho ô {cell_key}; resources now: {resources}")
+
+                    # Apply level up
+                    cell_levels[cell_key] = current_level + 1
+                    print(f"Ô {cell_key} đã tăng lên Level: {cell_levels[cell_key]}")
 
     screen.fill(WHITE)
 
