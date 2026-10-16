@@ -375,6 +375,34 @@ def can_upgrade_plain_to_higher(center_col, center_row, plain_variant, target_le
     return True
 
 
+# New helper: compute adjacency boost percent for a specific cell
+def compute_cell_boost_percent(center_col, center_row):
+    """Compute total adjacency boost (as decimal, e.g., 0.25 => 25%) applied to the cell at (center_col, center_row)."""
+    terrain = terrain_map.get((center_col, center_row), 'plain')
+    # Determine the target terrain for boost calculations (take plain variants into account)
+    if terrain == 'plain':
+        target = choose_plain_variant(center_col, center_row)
+    else:
+        target = terrain
+
+    boost_total = 0.0
+    for dx in (-1, 0, 1):
+        for dy in (-1, 0, 1):
+            if dx == 0 and dy == 0:
+                continue
+            nx = center_col + dx
+            ny = center_row + dy
+            if not (0 <= nx < GRID_SIZE and 0 <= ny < GRID_SIZE):
+                continue
+            source = terrain_map.get((nx, ny), 'plain')
+            # if neighbor is plain, evaluate its plain variant for source
+            if source == 'plain':
+                source = choose_plain_variant(nx, ny)
+            neighbor_level = cell_levels.get((nx, ny), 1)
+            boost_total += get_boost_percent(source, neighbor_level, target)
+    return boost_total
+
+
 # ------------- Main loop -------------
 while running:
     dt = clock.tick(60)
@@ -679,22 +707,30 @@ while running:
                 cur_res_key, cur_prod_amt = get_cell_production_per_minute(ttype, level)
 
                 # draw current info box (include production)
-                # make box taller to fit production line
-                cur_box_h = 80
+                # make box taller to fit production line + adjacency info
+                cur_box_h = 100
                 pygame.draw.rect(screen, (50, 50, 50), (info_x, hover_info_y, info_w, cur_box_h))
                 pygame.draw.rect(screen, WHITE, (info_x, hover_info_y, info_w, cur_box_h), 1)
                 line1 = res_font.render(f"Terrain: {display_name}", True, WHITE)
                 line2 = res_font.render(f"Level: {level}", True, WHITE)
                 screen.blit(line1, (info_x + 8, hover_info_y + 6))
                 screen.blit(line2, (info_x + 8, hover_info_y + 32))
+
+                # Adjacent boost info
+                boost_pct = compute_cell_boost_percent(hover_col, hover_row)
+                boost_text = small_font.render(f"Adjacency boost: +{boost_pct*100:.0f}%", True, WHITE)
+                screen.blit(boost_text, (info_x + 8, hover_info_y + 56))
+
                 prod_label = small_font.render("Production/min:", True, WHITE)
-                screen.blit(prod_label, (info_x + 8, hover_info_y + 56))
+                screen.blit(prod_label, (info_x + 8, hover_info_y + 76))
                 if cur_res_key and cur_prod_amt:
                     prod_val = small_font.render(f"{cur_res_key.capitalize()}: {cur_prod_amt}", True, WHITE)
-                    screen.blit(prod_val, (info_x + 140, hover_info_y + 56))
+                    screen.blit(prod_val, (info_x + 140, hover_info_y + 76))
+                    boosted_val = small_font.render(f"With Adj: {cur_res_key.capitalize()}: {cur_prod_amt*(1.0+boost_pct):.1f}", True, WHITE)
+                    screen.blit(boosted_val, (info_x + 140, hover_info_y + 92))
                 else:
                     prod_val = small_font.render("-", True, WHITE)
-                    screen.blit(prod_val, (info_x + 140, hover_info_y + 56))
+                    screen.blit(prod_val, (info_x + 140, hover_info_y + 76))
 
                 # If not max level, draw next-level box below
                 if level < 4:
