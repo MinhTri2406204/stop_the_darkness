@@ -93,10 +93,13 @@ directions = [(1, 0), (0, -1), (-1, 0), (0, 1)]
 dir_index = 0  # Bắt đầu sang phải
 
 move_timer = 0
-MOVE_DELAY = 50000  # ms giữa mỗi bước (đã giảm để dễ test)
+MOVE_DELAY = 5000  # ms giữa mỗi bước (đã giảm để dễ test)
 
-# Control whether the spiral is advancing
+# Control whether the game is running or has been started
 playing = False
+game_started = False
+game_won = False  # True when the beacon reaches level 2
+game_lost = False  # True when darkness covers every grid cell
 
 # Resources (set when play starts)
 resources = None  # will be dict like {'wood':12,...}
@@ -145,7 +148,6 @@ def generate_terrain_map():
 
     # prepare list of all positions excluding the beacon
     positions = [(c, r) for c in range(GRID_SIZE) for r in range(GRID_SIZE) if (c, r) != beacon]
-
     # maximum counts for constrained terrains
     max_counts = {'tree': 40, 'water': 30, 'rock': 14, 'magic': 4}
 
@@ -170,10 +172,12 @@ def generate_terrain_map():
 
 
 def regenerate_map():
-    global terrain_map, beacon_pos, cell_levels, dark_cells, resources, resource_accum
+    global terrain_map, beacon_pos, cell_levels, dark_cells, resources, resource_accum, game_won, game_lost
     global col, row, left_bound, right_bound, top_bound, bottom_bound, dir_index, move_timer
 
     terrain_map, beacon_pos = generate_terrain_map()
+    game_won = False
+    game_lost = False
     # reset game spiral state
     col, row = 0, GRID_SIZE - 1
     left_bound = 0
@@ -214,7 +218,11 @@ BUTTON_SPACING = 20
 buttons_x = GRID_PIXELS + (INFO_WIDTH - (BUTTON_W * 2 + BUTTON_SPACING)) // 2
 buttons_y = SCREEN_HEIGHT // 4 + 60
 play_button_rect = pygame.Rect(buttons_x, buttons_y, BUTTON_W, BUTTON_H)
+# Pause/Resume button shown in the resource panel during a game
+pause_button_rect = pygame.Rect(GRID_PIXELS + (INFO_WIDTH - BUTTON_W) // 2, 65, BUTTON_W, BUTTON_H)
 regen_button_rect = pygame.Rect(buttons_x + BUTTON_W + BUTTON_SPACING, buttons_y, BUTTON_W, BUTTON_H)
+# Restart button displayed on the game-over overlay
+play_again_button_rect = pygame.Rect((GRID_PIXELS - 180) // 2, SCREEN_HEIGHT // 2 + 55, 180, 44)
 
 
 def get_cell_production_per_minute(terrain_type, level):
@@ -498,6 +506,11 @@ while running:
             if 0 <= next_col < GRID_SIZE and 0 <= next_row < GRID_SIZE:
                 col, row = next_col, next_row
                 dark_cells.add((col, row))
+                # Lose when darkness has covered every cell in the grid.
+                if len(dark_cells) >= GRID_SIZE * GRID_SIZE:
+                    game_lost = True
+                    playing = False
+                    print('YOU LOSE! Darkness covered the entire grid.')
 
     # Production accumulation (per-frame) - convert per-minute production into per-frame and accumulate
     if playing and resources is not None:
@@ -527,28 +540,42 @@ while running:
 
                 # If click is inside info panel, check buttons first
                 if mouse_x >= GRID_PIXELS:
-                    # If currently playing, the panel shows resources only; ignore clicks there
-                    if playing:
-                        # Optionally later we could add pause button here
+                    if game_started:
+                        # Pause/Resume without resetting resources or the map. A won game stays ended.
+                        if pause_button_rect.collidepoint(mouse_x, mouse_y):
+                            if not game_won and not game_lost:
+                                playing = not playing
+                                move_timer = 0
+                                print('Resumed' if playing else 'Paused')
                         continue
-                    # Not playing: check buttons
+
+                    # Before the game starts, show Play and Regenerate buttons
                     if play_button_rect.collidepoint(mouse_x, mouse_y):
-                        # Toggle playing; when starting play initialize resources
-                        was_playing = playing
-                        playing = not playing
-                        if playing and not was_playing:
+                        playing = True
+                        game_started = True
+                        if resources is None:
                             resources = {'wood': 12, 'rock': 0, 'mana': 0, 'technology': 0}
-                            # init accumulators
                             resource_accum = {k: 0.0 for k in resources.keys()}
-                            print('Playing - resources initialized:', resources)
-                        else:
-                            print('Paused')
+                        move_timer = 0
+                        print('Playing - resources initialized:', resources)
                         continue
                     if regen_button_rect.collidepoint(mouse_x, mouse_y):
                         regenerate_map()
                         print('Map regenerated')
                         continue
                     # clicked inside panel but not on buttons; ignore
+                    continue
+
+                # On a loss, the only grid interaction is the Play again button.
+                if game_lost:
+                    if play_again_button_rect.collidepoint(mouse_x, mouse_y):
+                        regenerate_map()
+                        resources = {'wood': 12, 'rock': 0, 'mana': 0, 'technology': 0}
+                        resource_accum = {k: 0.0 for k in resources.keys()}
+                        game_started = True
+                        playing = True
+                        move_timer = 0
+                        print('Play again - new game started.')
                     continue
 
                 # Click inside grid
@@ -646,6 +673,12 @@ while running:
                     cell_levels[cell_key] = current_level + 1
                     print(f"Ô {cell_key} đã tăng lên Level: {cell_levels[cell_key]}")
 
+                    # Win condition: upgrading the Beacon to level 2 ends the game.
+                    if terrain_type == 'beacan' and cell_levels[cell_key] >= 2:
+                        game_won = True
+                        playing = False
+                        print('YOU WIN! Beacon reached Level 2.')
+
                     # If this was a plain cell, set the chosen plain variant on successful upgrade
                     try:
                         if plain_variant is not None:
@@ -697,7 +730,7 @@ while running:
         screen.blit(text, (c * CELL_SIZE + 4, r * CELL_SIZE + 2))
 
     # 2. Vẽ các ô bóng tối (đè lên terrains) - only when playing
-    if playing:
+    if playing or game_lost:
         for c, r in dark_cells:
             pygame.draw.rect(screen, BLACK, (c * CELL_SIZE, r * CELL_SIZE, CELL_SIZE, CELL_SIZE))
 
@@ -713,13 +746,22 @@ while running:
     # Draw right info panel (300 x 600)
     pygame.draw.rect(screen, DARK_GRAY, (GRID_PIXELS, 0, INFO_WIDTH, SCREEN_HEIGHT))
 
-    # If playing, show only resources in the panel
-    if playing and resources is not None:
+    # Once started, keep the resource panel visible while playing or paused
+    if game_started and resources is not None:
         # Title small at top
         title_surface = title_font.render('Stop the darkness', True, WHITE)
         title_rect = title_surface.get_rect()
         title_rect.center = (GRID_PIXELS + INFO_WIDTH // 2, 40)
         screen.blit(title_surface, title_rect)
+
+        # Pause/Resume button
+        pause_color = ORANGE if playing else GREEN
+        pygame.draw.rect(screen, pause_color, pause_button_rect)
+        pygame.draw.rect(screen, WHITE, pause_button_rect, 2)
+        pause_label = 'Pause' if playing else 'Resume'
+        pause_text = font.render(pause_label, True, WHITE)
+        pause_text_rect = pause_text.get_rect(center=pause_button_rect.center)
+        screen.blit(pause_text, pause_text_rect)
 
         # Draw resources list
         labels = ['Wood', 'Rock', 'Mana', 'Technology']
@@ -921,6 +963,40 @@ while running:
             label = 'Beacon' if t == 'beacan' else t.capitalize()
             lbl = font.render(label, True, WHITE)
             screen.blit(lbl, (lx + 24, ty))
+
+    # Show a win overlay and stop all gameplay after the Beacon reaches level 2.
+    if game_won:
+        overlay = pygame.Surface((GRID_PIXELS, SCREEN_HEIGHT), pygame.SRCALPHA)
+        overlay.fill((0, 0, 0, 175))
+        screen.blit(overlay, (0, 0))
+        win_font = pygame.font.SysFont(None, 76, bold=True)
+        detail_font = pygame.font.SysFont(None, 30, bold=True)
+        win_text = win_font.render('YOU WIN!', True, (255, 215, 0))
+        win_rect = win_text.get_rect(center=(GRID_PIXELS // 2, SCREEN_HEIGHT // 2 - 25))
+        screen.blit(win_text, win_rect)
+        detail_text = detail_font.render('Beacon reached Level 2', True, WHITE)
+        detail_rect = detail_text.get_rect(center=(GRID_PIXELS // 2, SCREEN_HEIGHT // 2 + 30))
+        screen.blit(detail_text, detail_rect)
+
+    # Show a lose overlay and Play again button when darkness covers the whole grid.
+    if game_lost:
+        overlay = pygame.Surface((GRID_PIXELS, SCREEN_HEIGHT), pygame.SRCALPHA)
+        overlay.fill((0, 0, 0, 190))
+        screen.blit(overlay, (0, 0))
+        lose_font = pygame.font.SysFont(None, 76, bold=True)
+        detail_font = pygame.font.SysFont(None, 28, bold=True)
+        lose_text = lose_font.render('YOU LOSE!', True, (255, 80, 80))
+        lose_rect = lose_text.get_rect(center=(GRID_PIXELS // 2, SCREEN_HEIGHT // 2 - 35))
+        screen.blit(lose_text, lose_rect)
+        detail_text = detail_font.render('Darkness covered every block', True, WHITE)
+        detail_rect = detail_text.get_rect(center=(GRID_PIXELS // 2, SCREEN_HEIGHT // 2 + 10))
+        screen.blit(detail_text, detail_rect)
+
+        pygame.draw.rect(screen, GREEN, play_again_button_rect, border_radius=6)
+        pygame.draw.rect(screen, WHITE, play_again_button_rect, 2, border_radius=6)
+        again_text = font.render('Play again', True, WHITE)
+        again_rect = again_text.get_rect(center=play_again_button_rect.center)
+        screen.blit(again_text, again_rect)
 
     pygame.display.flip()
 
