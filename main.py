@@ -1,6 +1,7 @@
 import pygame
 import random
 import json
+import math
 from pathlib import Path
 
 script_dir = Path(__file__).parent
@@ -37,6 +38,11 @@ TERRAIN_COLORS = {
     'water': (65, 105, 225),
     'magic': (138, 43, 226),
     'beacan': (255, 215, 0),  # special beacon cell (gold)
+    # Plain subtype colors (displayed when plain cell level >= 1)
+    'plain_wood': (255, 180, 50),   # bright orange
+    'plain_rock': (180, 180, 180),  # light gray
+    'plain_magic': (200, 150, 255), # light purple
+    'plain_water': (173, 216, 230), # light blue
 }
 
 # load costs
@@ -277,6 +283,33 @@ def get_boost_percent(source_terrain, source_level, target_terrain):
     if source_terrain == 'plain_water':
         return 0.25 if source_level <= 2 else 0.50 if source_level == 3 else 0.75
     return 0.0
+
+
+def compute_upgrade_cost(cost_entry, terrain_type, next_level):
+    """Compute final cost dict for upgrading to next_level.
+    For plain subtypes: final = ceil(base * (1 + 0.1 * x)) where x = next_level (1..4).
+    For other terrains: return integer copy of base costs.
+    """
+    if not cost_entry:
+        return None
+    final = {}
+    if isinstance(terrain_type, str) and terrain_type.startswith('plain'):
+        x = max(1, min(4, int(next_level)))
+        mult = 1.0 + 0.1 * x
+        for rk, amt in cost_entry.items():
+            try:
+                base = float(amt)
+                final_amt = int(math.ceil(base * mult))
+            except Exception:
+                final_amt = amt
+            final[rk] = final_amt
+    else:
+        for rk, amt in cost_entry.items():
+            try:
+                final[rk] = int(amt)
+            except Exception:
+                final[rk] = amt
+    return final
 
 
 def compute_total_production_per_minute():
@@ -583,22 +616,31 @@ while running:
 
                     cost = costs.get(cost_key)
 
+                    # compute final cost: apply plain-subtype multiplier if applicable
+                    final_cost = None
+                    if cost:
+                        final_cost = compute_upgrade_cost(cost, cost_key, next_level)
+
                     # If resources exists (playing), check and deduct; otherwise allow free upgrades (edit mode)
-                    if resources is not None and cost:
+                    if resources is not None and final_cost:
                         # check resource sufficiency
                         enough = True
-                        for res_name, amt in cost.items():
+                        for res_name, amt in final_cost.items():
                             # 'mana' in cost maps to resources['mana']
                             if resources.get(res_name, 0) < amt:
                                 enough = False
                                 break
                         if not enough:
-                            print(f"Không đủ tài nguyên để nâng ô {cell_key} ({terrain_type}) — cần {cost}")
+                            print(f"Không đủ tài nguyên để nâng ô {cell_key} ({terrain_type}) — cần {final_cost}")
                             continue
                         # deduct
-                        for res_name, amt in cost.items():
+                        for res_name, amt in final_cost.items():
                             resources[res_name] = resources.get(res_name, 0) - amt
-                        print(f"Đã trừ tài nguyên {cost} cho ô {cell_key}; resources now: {resources}")
+                        print(f"Đã trừ tài nguyên {final_cost} cho ô {cell_key}; resources now: {resources}")
+
+                    elif resources is not None and cost is None:
+                        # if there is no cost entry, allow free upgrade (previous behavior)
+                        pass
 
                     # Apply level up
                     cell_levels[cell_key] = current_level + 1
@@ -629,7 +671,24 @@ while running:
 
     # Draw left: 1. Vẽ terrains
     for (c, r), t in terrain_map.items():
-        color = TERRAIN_COLORS.get(t, (200, 200, 200))
+        # Determine color while preserving existing tree/rock/magic colors
+        lvl = cell_levels.get((c, r), 0)
+        if t == 'plain':
+            if lvl >= 1:
+                pv = choose_plain_variant(c, r)
+                color = TERRAIN_COLORS.get(pv, TERRAIN_COLORS.get('plain', (200, 200, 200)))
+            else:
+                color = TERRAIN_COLORS.get('plain', (200, 200, 200))
+        elif isinstance(t, str) and t.startswith('plain_'):
+            # explicit stored plain subtype: show subtype color only when level >=1
+            if lvl >= 1:
+                color = TERRAIN_COLORS.get(t, TERRAIN_COLORS.get('plain', (200, 200, 200)))
+            else:
+                color = TERRAIN_COLORS.get('plain', (200, 200, 200))
+        else:
+            # keep existing colors for tree/rock/magic and others
+            color = TERRAIN_COLORS.get(t, (200, 200, 200))
+
         pygame.draw.rect(screen, color, (c * CELL_SIZE, r * CELL_SIZE, CELL_SIZE, CELL_SIZE))
         # Vẽ chữ viết tắt terrain
         # For 'beacan' we want 'B'
@@ -778,17 +837,30 @@ while running:
                         # show only wood/rock/mana (magic) if present
                         cx = info_x + 8
                         line_index = 0
-                        for rk in ('wood', 'rock', 'mana'):
-                            if rk in cost_entry:
-                                try:
-                                    new_val = int(cost_entry[rk]) + 1
-                                except Exception:
-                                    new_val = cost_entry[rk]
-                                # label mapping: 'mana' -> 'Magic' for display
-                                label = 'Magic' if rk == 'mana' else rk.capitalize()
-                                ct = small_font.render(f"{label}: {new_val}", True, WHITE)
-                                screen.blit(ct, (cx, cost_text_y + line_index * 18))
-                                line_index += 1
+                        # For plain subtypes use the new multiplier rule for display
+                        if isinstance(cost_key, str) and cost_key.startswith('plain'):
+                            display_costs = compute_upgrade_cost(cost_entry, cost_key, next_level)
+                            for rk in ('wood', 'rock', 'mana'):
+                                if rk in display_costs:
+                                    try:
+                                        new_val = int(display_costs[rk])
+                                    except Exception:
+                                        new_val = display_costs[rk]
+                                    label = 'Magic' if rk == 'mana' else rk.capitalize()
+                                    ct = small_font.render(f"{label}: {new_val}", True, WHITE)
+                                    screen.blit(ct, (cx, cost_text_y + line_index * 18))
+                                    line_index += 1
+                        else:
+                            for rk in ('wood', 'rock', 'mana'):
+                                if rk in cost_entry:
+                                    try:
+                                        new_val = int(cost_entry[rk]) + 1
+                                    except Exception:
+                                        new_val = cost_entry[rk]
+                                    label = 'Magic' if rk == 'mana' else rk.capitalize()
+                                    ct = small_font.render(f"{label}: {new_val}", True, WHITE)
+                                    screen.blit(ct, (cx, cost_text_y + line_index * 18))
+                                    line_index += 1
                         if line_index == 0:
                             ct = small_font.render("Cost: -", True, WHITE)
                             screen.blit(ct, (info_x + 8, cost_text_y))
