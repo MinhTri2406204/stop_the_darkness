@@ -178,26 +178,25 @@ def regenerate_map():
     move_timer = 0
     # reset dark and levels
     dark_cells = {(col, row)}
-    # reset all levels to 1 except some plain subtypes which start at 0
+    # reset all levels: plain cells start at level 0; all other terrain types start at level 1
     cell_levels = {}
     for c in range(GRID_SIZE):
         for r in range(GRID_SIZE):
             t = terrain_map.get((c, r), 'plain')
-            if t in ('plain_wood', 'plain_rock', 'plain_water'):
+            if t == 'plain' or (isinstance(t, str) and t.startswith('plain_')):
                 cell_levels[(c, r)] = 0
             else:
-                # ensure water and all other terrains have explicit level entries
                 cell_levels[(c, r)] = 1
 
 
 # initial terrain map
 terrain_map, beacon_pos = generate_terrain_map()
-# set default level = 1 for all cells
+# set default level = 0 for plain cells and plain subtypes, 1 for all other terrain types
 cell_levels = {}
 for c in range(GRID_SIZE):
     for r in range(GRID_SIZE):
         t = terrain_map.get((c, r), 'plain')
-        if t in ('plain_wood', 'plain_rock', 'plain_water'):
+        if t == 'plain' or (isinstance(t, str) and t.startswith('plain_')):
             cell_levels[(c, r)] = 0
         else:
             cell_levels[(c, r)] = 1
@@ -542,7 +541,7 @@ while running:
                     # Ensure the cell has a level entry (fix for water/plain variants missing levels)
                     if cell_key not in cell_levels:
                         t_init = terrain_map.get(cell_key, 'plain')
-                        if t_init in ('plain_wood', 'plain_rock', 'plain_water'):
+                        if t_init == 'plain' or (isinstance(t_init, str) and t_init.startswith('plain_')):
                             cell_levels[cell_key] = 0
                         else:
                             # water and other terrains default to level 1
