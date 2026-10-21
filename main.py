@@ -13,7 +13,7 @@ pygame.font.init()
 GRID_SIZE = 12
 CELL_SIZE = 50
 GRID_PIXELS = GRID_SIZE * CELL_SIZE
-INFO_WIDTH = 300  # tạo 1 vùng 300 x 600 cho title/info
+INFO_WIDTH = 300 
 SCREEN_WIDTH = GRID_PIXELS + INFO_WIDTH
 SCREEN_HEIGHT = GRID_PIXELS
 
@@ -38,7 +38,6 @@ TERRAIN_COLORS = {
     'water': (65, 105, 225),
     'magic': (138, 43, 226),
     'beacon': (255, 215, 0),  
-    # Màu từng loại plain (chỉ thay đổi khi ô có level >= 1)
     'plain_wood': (255, 180, 50),   
     'plain_rock': (180, 180, 180),  
     'plain_magic': (200, 150, 255), 
@@ -84,12 +83,12 @@ right_bound = GRID_SIZE - 1
 top_bound = 0
 bottom_bound = GRID_SIZE - 1
 
-# Hướng di chuyển: (dx, dy)
+# Hướng di chuyển của bóng tối: (dx, dy)
 directions = [(1, 0), (0, -1), (-1, 0), (0, 1)]
-dir_index = 0  # Bắt đầu sang phải
+dir_index = 0  
 
 move_timer = 0
-MOVE_DELAY = 5000  # ms giữa mỗi bước (đã giảm để dễ test)
+MOVE_DELAY = 5000 
 
 # Điều kiện khi game đang chạy hoặc mới bắt đầu
 playing = False
@@ -99,41 +98,24 @@ game_lost = False
 
 # Tài nguyên (khi game bắt đầu)
 resources = None  
-# Float accumulators for fractional production
 resource_accum = {}
 
-
+# Khởi tạo ô bóng tối
 dark_cells = set()
-# start position tracked but not shown until playing
 dark_cells.add((col, row))
 
 cell_levels = {}
 
-# ------------- Terrain map generation helpers -------------
-# You can tweak weights to control frequency of terrains
-terrain_weights = {
-    'rock': 8,
-    'tree': 12,
-    'plain': 40,
-    'water': 15,
-    'magic': 5,
-}
-terrain_choices = []
-for t, w in terrain_weights.items():
-    terrain_choices.extend([t] * w)
-
-
+# Khởi tạo terrain_map và beacon_pos
 def generate_terrain_map():
-    """Generate a terrain map while enforcing maximum counts per terrain.
-    Max counts (excluding the beacon cell):
-      - tree: 40
-      - water: 30
-      - rock: 14
-      - magic: 4
-    Remaining cells are 'plain'. The beacon is placed in one of the four center cells.
+    """
+    Tạo map với số lượng terrain giới hạn:
+    - tree: tối đa 40 ô
+    - water: tối đa 30 ô
+    - rock: tối đa 14 ô
+    - magic: tối đa 4 ô
     """
     m = {}
-    # choose beacon among center cells first
     center_cells = [
         (GRID_SIZE // 2 - 1, GRID_SIZE // 2 - 1),
         (GRID_SIZE // 2, GRID_SIZE // 2 - 1),
@@ -141,50 +123,28 @@ def generate_terrain_map():
         (GRID_SIZE // 2, GRID_SIZE // 2),
     ]
     beacon = random.choice(center_cells)
-
-    # prepare list of all positions excluding the beacon
     positions = [(c, r) for c in range(GRID_SIZE) for r in range(GRID_SIZE) if (c, r) != beacon]
-    # maximum counts for constrained terrains
     max_counts = {'tree': 40, 'water': 30, 'rock': 14, 'magic': 4}
 
     pool = []
-    # add constrained terrains up to their limits (but not exceeding available positions)
     for terrain, cnt in max_counts.items():
         take = min(cnt, len(positions) - len(pool))
         pool.extend([terrain] * take)
-    # fill the rest with plain
     remaining = len(positions) - len(pool)
     if remaining > 0:
         pool.extend(['plain'] * remaining)
-
-    # shuffle pool and assign to positions
     random.shuffle(pool)
     for pos, terrain in zip(positions, pool):
         m[pos] = terrain
-
-    # set beacon cell
     m[beacon] = 'beacon'
     return m, beacon
 
-
+# Tái tạo lại map và đặt lại trạng thái game
 def regenerate_map():
     global terrain_map, beacon_pos, cell_levels, dark_cells, resources, resource_accum, game_won, game_lost
     global col, row, left_bound, right_bound, top_bound, bottom_bound, dir_index, move_timer
 
     terrain_map, beacon_pos = generate_terrain_map()
-    game_won = False
-    game_lost = False
-    # reset game spiral state
-    col, row = 0, GRID_SIZE - 1
-    left_bound = 0
-    right_bound = GRID_SIZE - 1
-    top_bound = 0
-    bottom_bound = GRID_SIZE - 1
-    dir_index = 0
-    move_timer = 0
-    # reset dark and levels
-    dark_cells = {(col, row)}
-    # reset all levels: plain cells start at level 0; all other terrain types start at level 1
     cell_levels = {}
     for c in range(GRID_SIZE):
         for r in range(GRID_SIZE):
@@ -195,9 +155,7 @@ def regenerate_map():
                 cell_levels[(c, r)] = 1
 
 
-# initial terrain map
 terrain_map, beacon_pos = generate_terrain_map()
-# set default level = 0 for plain cells and plain subtypes, 1 for all other terrain types
 cell_levels = {}
 for c in range(GRID_SIZE):
     for r in range(GRID_SIZE):
@@ -207,27 +165,25 @@ for c in range(GRID_SIZE):
         else:
             cell_levels[(c, r)] = 1
 
-# Button layout in the info panel
 BUTTON_W = 120
 BUTTON_H = 40
 BUTTON_SPACING = 20
 buttons_x = GRID_PIXELS + (INFO_WIDTH - (BUTTON_W * 2 + BUTTON_SPACING)) // 2
 buttons_y = SCREEN_HEIGHT // 4 + 60
 play_button_rect = pygame.Rect(buttons_x, buttons_y, BUTTON_W, BUTTON_H)
-# Pause/Resume button shown in the resource panel during a game
+
 pause_button_rect = pygame.Rect(GRID_PIXELS + (INFO_WIDTH - BUTTON_W) // 2, 65, BUTTON_W, BUTTON_H)
 regen_button_rect = pygame.Rect(buttons_x + BUTTON_W + BUTTON_SPACING, buttons_y, BUTTON_W, BUTTON_H)
-# Restart button displayed on the game-over overlay
+
 play_again_button_rect = pygame.Rect((GRID_PIXELS - 180) // 2, SCREEN_HEIGHT // 2 + 55, 180, 44)
 
-
+# Hàm tính sản lượng mỗi phút cho một ô terrain_type ở level nhất định
 def get_cell_production_per_minute(terrain_type, level):
-    """Return (resource_key, amount_per_minute) for a given terrain cell level. Returns (None, 0) if none."""
+    """Trả về (resource_key, amount_per_minute) cho một ô terrain_type ở level nhất định."""
     if terrain_type == 'beacon':
         return None, 0
     if terrain_type not in PRODUCTION_TABLE:
         return None, 0
-    # Find the highest mapping <= level
     mapping = PRODUCTION_TABLE[terrain_type]
     possible_levels = sorted([l for l in mapping.keys() if l <= level])
     if not possible_levels:
@@ -237,9 +193,9 @@ def get_cell_production_per_minute(terrain_type, level):
     res_key = TERRAIN_TO_RESOURCE.get(terrain_type)
     return res_key, amount
 
-
+# Hàm trả về danh sách các loại terrain mà một ô có thể nhận boost
 def get_boost_targets(terrain_name):
-    """Return the list of terrain types that a source terrain can boost."""
+    """Trả về danh sách các loại terrain mà một ô có thể nhận boost."""
     if terrain_name == 'tree':
         return ['tree']
     if terrain_name == 'rock':
@@ -256,23 +212,21 @@ def get_boost_targets(terrain_name):
         return ['tree', 'rock']
     return []
 
-
+# Hàm tính phần trăm boost dựa trên terrain nguồn, level nguồn và terrain mục tiêu
 def get_boost_percent(source_terrain, source_level, target_terrain):
-    """Percentage multiplier from adjacency boost rules.
-    Rules:
-      - tree / rock / magic => boost same type only.
-      - plain_wood => boosts tree and rock.
-      - plain_rock => boosts rock only; 50% at level 1-2 and 75% at level 3-4.
-      - plain_magic => boosts tree and magic.
-      - plain_water => boosts tree and rock.
-      - all other combos => 0.
-    Percentages are expressed as decimals for multiplication.
+    """Hệ số nhân phần trăm từ quy tắc tăng cường liền kề.
+        Quy tắc:
+            - tree / rock / magic => chỉ tăng cường cùng loại.
+            - tree => tăng cường sản xuất cây và đá.
+            - rock => chỉ tăng cường sản xuất đá; 50% ở cấp độ 1-2 và 75% ở cấp độ 3-4.
+            - magic => tăng cường sản xuất cây và ma thuật.
+            - water => tăng cường sản xuất cây và đá.
+            - tất cả các tổ hợp khác => 0.
+        Tỷ lệ phần trăm được biểu thị dưới dạng số thập phân để nhân.
     """
-    # cells with level 0 do not provide adjacency boost
     if source_level is None or source_level <= 0:
         return 0.0
 
-    # caller should pass plain variants (plain_...) rather than raw 'plain'
     if target_terrain not in get_boost_targets(source_terrain):
         return 0.0
 
@@ -288,11 +242,11 @@ def get_boost_percent(source_terrain, source_level, target_terrain):
         return 0.25 if source_level <= 2 else 0.50 if source_level == 3 else 0.75
     return 0.0
 
-
+# Hàm tính toán chi phí nâng cấp dựa trên cost_entry, loại terrain và level tiếp theo
 def compute_upgrade_cost(cost_entry, terrain_type, next_level):
-    """Compute final cost dict for upgrading to next_level.
-    For plain subtypes: final = ceil(base * (1 + 0.1 * x)) where x = next_level (1..4).
-    For other terrains: return integer copy of base costs.
+    """ Tính toán từ điển chi phí cuối cùng để nâng cấp lên next_level.
+        Đối với các loại địa hình thông thường: final = ceil(base * (1 + 0.1 * x)) trong đó x = next_level (1..4).
+        Đối với các loại địa hình khác: trả về bản sao số nguyên của chi phí cơ bản.
     """
     if not cost_entry:
         return None
@@ -315,16 +269,15 @@ def compute_upgrade_cost(cost_entry, terrain_type, next_level):
                 final[rk] = amt
     return final
 
-
+# Hàm tính tổng sản lượng mỗi phút trên toàn bộ lưới 3x3
 def compute_total_production_per_minute():
-    """Sum production per-minute across the whole grid and return dict resource->amt.
-    Each adjacent terrain within the 3x3 area contributes a boost to the target cell's output.
-    Only neighbors with level >=1 contribute boosts; level 0 neighbors do not.
+    """ Tính tổng sản lượng mỗi phút trên toàn bộ lưới và trả về từ điển resource->amt.
+        Mỗi địa hình liền kề trong khu vực 3x3 đóng góp một phần tăng cường cho sản lượng của ô mục tiêu.
+        Chỉ những hàng xóm có cấp độ >=1 mới đóng góp phần tăng cường; hàng xóm cấp độ 0 thì không.
     """
     totals = {}
     for (c, r), lvl in cell_levels.items():
         terrain = terrain_map.get((c, r), 'plain')
-        # determine effective target terrain (resolve plain -> plain_variant)
         target = terrain if terrain != 'plain' else choose_plain_variant(c, r)
 
         res_key, base_amt = get_cell_production_per_minute(target, lvl)
@@ -341,11 +294,9 @@ def compute_total_production_per_minute():
                 if not (0 <= nx < GRID_SIZE and 0 <= ny < GRID_SIZE):
                     continue
                 neighbor_type = terrain_map.get((nx, ny), 'plain')
-                # resolve plain neighbors to their variants
                 if neighbor_type == 'plain':
                     neighbor_type = choose_plain_variant(nx, ny)
                 neighbor_level = cell_levels.get((nx, ny), 0)
-                # only neighbors with level >=1 provide boosts
                 if neighbor_level <= 0:
                     continue
                 boost_total += get_boost_percent(neighbor_type, neighbor_level, target)
@@ -356,11 +307,12 @@ def compute_total_production_per_minute():
     return totals
 
 
-# Determine plain subtype based on orthogonal neighbors
+# Hàm xác định biến thể plain dựa trên các láng giềng vuông góc
 def choose_plain_variant(center_col, center_row):
-    """Return 'plain_rock' if >=2 orthogonal neighbors are 'rock',
-              'plain_magic' if >=1 are 'magic' (per updated rule), 
-         else 'plain_wood'."""
+    """ Trả về 'plain_rock' nếu có >=2 láng giềng vuông góc là 'rock',
+        trả về 'plain_magic' nếu có >=1 láng giềng là 'magic' (theo quy tắc cập nhật),
+        ngược lại trả về 'plain_wood'.
+    """
     neighbors = [
         (center_col - 1, center_row),
         (center_col, center_row - 1),
@@ -379,33 +331,28 @@ def choose_plain_variant(center_col, center_row):
                 magic_count += 1
             elif nt == 'water':
                 water_count += 1
-    # rock rule still requires >=2
     if rock_count >= 2:
         return 'plain_rock'
-    # magic rule updated: require at least 1 orthogonal magic neighbor
     if magic_count >= 1:
         return 'plain_magic'
     if water_count >=1:
         return 'plain_water'
     return 'plain_wood'
 
-
-# New: check whether a plain subtype can upgrade beyond level 2
-# Dependency positions relative to 3x3 (center at [1,1]): [[0,1],[1,0],[1,2],[2,1]] -> offsets: (-1,0),(0,-1),(0,1),(1,0)
+# Các ô phụ thuộc là các ô vuông góc xung quanh (trái, phải, trên, dưới)
 DEPENDENCY_OFFSETS = [(-1, 0), (0, -1), (0, 1), (1, 0)]
 
-
+# Hàm kiểm tra xem ô plain có thể nâng cấp lên cấp độ cao hơn hay không dựa trên các ô phụ thuộc
 def can_upgrade_plain_to_higher(center_col, center_row, plain_variant, target_level):
-    """Return True if plain at (center_col,center_row) of type plain_variant is allowed to upgrade to target_level.
-    Rules:
-      - Upgrades to level 2 are always allowed (subject to resources/costs).
-      - Upgrades to level 3 or 4 require the dependent terrains (tree/rock/magic) at the 4 orthogonal positions
-        to be present and at level 4. If any dependency position is out-of-bounds or not the required terrain at level 4,
-        the upgrade is blocked.
+    """ Trả về True nếu ô đất bằng phẳng tại (center_col, center_row) thuộc loại plain_variant được phép nâng cấp lên target_level.
+        Quy tắc:
+        - Luôn được phép nâng cấp lên cấp độ 2 (tùy thuộc vào tài nguyên/chi phí).
+        - Nâng cấp lên cấp độ 3 hoặc 4 yêu cầu các địa hình phụ thuộc (cây/đá/phép thuật) tại 4 vị trí vuông góc
+        phải hiện diện và ở cấp độ 4. Nếu bất kỳ vị trí phụ thuộc nào nằm ngoài giới hạn hoặc không phải là địa hình cần thiết ở cấp độ 4,
+        việc nâng cấp sẽ bị chặn.
     """
     if target_level <= 2:
         return True
-    # map plain variant to required terrain
     mapping = {
         'plain_wood': 'tree',
         'plain_rock': 'rock',
@@ -414,9 +361,7 @@ def can_upgrade_plain_to_higher(center_col, center_row, plain_variant, target_le
     }
     req = mapping.get(plain_variant)
     if req is None:
-        # unknown plain variant -> block
         return False
-    # check all dependency positions
     for dx, dy in DEPENDENCY_OFFSETS:
         nx = center_col + dx
         ny = center_row + dy
@@ -428,12 +373,10 @@ def can_upgrade_plain_to_higher(center_col, center_row, plain_variant, target_le
             return False
     return True
 
-
-# New helper: compute adjacency boost percent for a specific cell
+# Hàm tính tổng phần trăm tăng cường lân cận cho một ô tại (center_col, center_row)
 def compute_cell_boost_percent(center_col, center_row):
-    """Compute total adjacency boost (as decimal, e.g., 0.25 => 25%) applied to the cell at (center_col, center_row)."""
+    """Tính tổng mức tăng cường lân cận (dưới dạng số thập phân, ví dụ: 0,25 => 25%) được áp dụng cho ô tại (center_col, center_row)."""
     terrain = terrain_map.get((center_col, center_row), 'plain')
-    # Determine the target terrain for boost calculations (take plain variants into account)
     if terrain == 'plain':
         target = choose_plain_variant(center_col, center_row)
     else:
@@ -449,24 +392,21 @@ def compute_cell_boost_percent(center_col, center_row):
             if not (0 <= nx < GRID_SIZE and 0 <= ny < GRID_SIZE):
                 continue
             source = terrain_map.get((nx, ny), 'plain')
-            # if neighbor is plain, evaluate its plain variant for source
             if source == 'plain':
                 source = choose_plain_variant(nx, ny)
             neighbor_level = cell_levels.get((nx, ny), 0)
-            # only neighbors with level >=1 provide boosts
             if neighbor_level <= 0:
                 continue
             boost_total += get_boost_percent(source, neighbor_level, target)
     return boost_total
 
 
-# ------------- Main loop -------------
+# Main loop
 while running:
     dt = clock.tick(60)
     if playing:
         move_timer += dt
 
-    # Advance spiral movement
     if playing and move_timer >= MOVE_DELAY:
         move_timer = 0
 
@@ -477,18 +417,18 @@ while running:
 
         # Kiểm tra xem có chạm vào ranh giới xoắn ốc không
         should_turn = False
-        if dir_index == 0 and next_col > right_bound:     # Đang sang phải và đụng vách phải
+        if dir_index == 0 and next_col > right_bound:     
             should_turn = True
-            bottom_bound -= 1                             # Thu hẹp ranh giới dưới
-        elif dir_index == 1 and next_row < top_bound:     # Đang đi lên và đụng vách trên
+            bottom_bound -= 1                             
+        elif dir_index == 1 and next_row < top_bound:     
             should_turn = True
-            right_bound -= 1                              # Thu hẹp ranh giới phải
-        elif dir_index == 2 and next_col < left_bound:    # Đang sang trái và đụng vách trái
+            right_bound -= 1                              
+        elif dir_index == 2 and next_col < left_bound:    
             should_turn = True
-            top_bound += 1                                # Thu hẹp ranh giới trên
-        elif dir_index == 3 and next_row > bottom_bound:  # Đang đi xuống và đụng vách dưới
+            top_bound += 1                               
+        elif dir_index == 3 and next_row > bottom_bound:  
             should_turn = True
-            left_bound += 1                               # Thu hẹp ranh giới trái
+            left_bound += 1                               
 
         # Nếu đụng ranh giới thì đổi hướng và tính lại vị trí kế tiếp
         if should_turn:
@@ -502,20 +442,19 @@ while running:
             if 0 <= next_col < GRID_SIZE and 0 <= next_row < GRID_SIZE:
                 col, row = next_col, next_row
                 dark_cells.add((col, row))
-                # Lose when darkness has covered every cell in the grid.
+                # Kiểm tra điều kiện thua: nếu tất cả các ô đều bị bóng tối bao phủ
                 if len(dark_cells) >= GRID_SIZE * GRID_SIZE:
                     game_lost = True
                     playing = False
                     print('YOU LOSE! Darkness covered the entire grid.')
 
-    # Production accumulation (per-frame) - convert per-minute production into per-frame and accumulate
+    # Tích lũy sản lượng tài nguyên theo thời gian
     if playing and resources is not None:
-        # ensure accumulators exist
         for k in resources.keys():
             resource_accum.setdefault(k, 0.0)
 
         prod_totals = compute_total_production_per_minute()  # resource->per-minute
-        # accumulate fractional production
+        # Cập nhật resource_accum dựa trên dt (ms) và sản lượng mỗi phút
         for res_key, per_min in prod_totals.items():
             add_amount = per_min * (dt / 60000.0)
             resource_accum[res_key] = resource_accum.get(res_key, 0.0) + add_amount
